@@ -209,9 +209,12 @@ pub fn run() {
             commands::get_app_info,
             commands::get_loopx_digest,
             commands::get_environment_info,
+            commands::read_theme_pack,
             skills::read_file,
             skills::write_file,
             skills::list_directory,
+            skills::search_files,
+            skills::execute_command,
             skills::get_tool_definitions
         ])
         .run(tauri::generate_context!())

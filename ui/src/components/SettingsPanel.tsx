@@ -4,7 +4,6 @@ import type { ChatParams } from '../types';
 
 interface SettingsPanelProps {
   baseUrl: string;
-  onBaseUrlChange: (url: string) => void;
   model: string;
   systemPrompt: string;
   onSystemPromptChange: (prompt: string) => void;
@@ -21,7 +20,6 @@ function sanitizeModelName(raw: string): string {
 
 export function SettingsPanel({
   baseUrl,
-  onBaseUrlChange,
   model,
   systemPrompt,
   onSystemPromptChange,
@@ -82,15 +80,9 @@ export function SettingsPanel({
 
   return (
     <div className="settings-panel">
-      <label className="settings-panel__field">
-        <span>Ollama base URL</span>
-        <input
-          type="text"
-          value={baseUrl}
-          onChange={(e) => onBaseUrlChange(e.target.value)}
-          placeholder="http://localhost:11434"
-        />
-      </label>
+      <p className="settings-panel__hint">
+        Connected to <code>{baseUrl}</code> — change the base URL in Settings → General.
+      </p>
 
       {modelInfoError ? (
         <p className="settings-panel__model-info settings-panel__model-info--error">

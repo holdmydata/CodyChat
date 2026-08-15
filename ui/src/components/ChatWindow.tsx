@@ -11,7 +11,6 @@ import { ActivityTracker } from './ActivityTracker';
 interface ChatWindowProps {
   conversation: Conversation;
   baseUrl: string;
-  onBaseUrlChange: (url: string) => void;
   onModelChange: (model: string) => void;
   onSystemPromptChange: (prompt: string) => void;
   onParamsChange: (params: ChatParams) => void;
@@ -28,7 +27,6 @@ interface ChatWindowProps {
 export function ChatWindow({
   conversation,
   baseUrl,
-  onBaseUrlChange,
   onModelChange,
   onSystemPromptChange,
   onParamsChange,
@@ -105,7 +103,6 @@ export function ChatWindow({
       {settingsOpen && (
         <SettingsPanel
           baseUrl={baseUrl}
-          onBaseUrlChange={onBaseUrlChange}
           model={conversation.model}
           systemPrompt={conversation.systemPrompt}
           onSystemPromptChange={onSystemPromptChange}

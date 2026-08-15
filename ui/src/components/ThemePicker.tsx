@@ -17,7 +17,18 @@ function swatchStyle(pack: ThemePack): CSSProperties | undefined {
   if (pack.id === 'auto') return undefined; // the --auto class draws the split swatch
   const accent = pack.vars.accent ?? pack.vars['accent-bg'] ?? '#888888';
   const bg = pack.vars.bg ?? 'transparent';
-  return { background: `linear-gradient(135deg, ${accent} 50%, ${bg} 50%)` };
+  // Pack colors are translucent by design (they sit over the app's glass
+  // backdrop), but the swatch itself sits inside the *currently active*
+  // theme's menu background — previewing another pack's translucent bg
+  // raw picks up whatever's active right now instead of that pack's own
+  // color (e.g. Light's swatch reads muddy gray while Dark is active).
+  // Give every swatch a fixed, scheme-matched backdrop so it always shows
+  // its own true color.
+  const backdrop = pack.scheme === 'dark' ? '#1c1d24' : '#f5f4f7';
+  return {
+    backgroundColor: backdrop,
+    backgroundImage: `linear-gradient(135deg, ${accent} 50%, ${bg} 50%)`,
+  };
 }
 
 function ThemeRow({
@@ -65,31 +76,22 @@ function ThemeRow({
   );
 }
 
-export function ThemePicker({ activeId, onSelect }: ThemePickerProps) {
+interface ThemePickerMenuProps extends ThemePickerProps {
+  /** True when rendered inline in the Settings menu rather than as a popover. */
+  embedded?: boolean;
+}
+
+// The picker's actual content (built-ins, imported packs, import controls) —
+// factored out so it can be rendered two ways: as a popover from the
+// titlebar 🎨 button (quick access, see ThemePicker below) and inline as a
+// full section of the Settings menu (a proper home for it, not just a
+// dropdown). Both read/write the same localStorage-backed custom-theme list.
+export function ThemePickerMenu({ activeId, onSelect, embedded = false }: ThemePickerMenuProps) {
   const [customThemes, setCustomThemes] = useState<ThemePack[]>(loadCustomThemes);
-  const [open, setOpen] = useState(false);
   const [pasteOpen, setPasteOpen] = useState(false);
   const [pasteText, setPasteText] = useState('');
   const [importError, setImportError] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Close on outside click / Escape while the popover is open.
-  useEffect(() => {
-    if (!open) return;
-    const onPointerDown = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
-    };
-    document.addEventListener('mousedown', onPointerDown);
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown);
-      document.removeEventListener('keydown', onKeyDown);
-    };
-  }, [open]);
 
   const importFromText = (text: string) => {
     let parsed: unknown;
@@ -138,6 +140,86 @@ export function ThemePicker({ activeId, onSelect }: ThemePickerProps) {
   };
 
   return (
+    <div
+      className={`theme-picker__menu${embedded ? ' theme-picker__menu--embedded' : ''}`}
+      role={embedded ? undefined : 'menu'}
+      aria-label={embedded ? undefined : 'Theme packs'}
+    >
+      <div className="theme-picker__section-label">Theme</div>
+      {BUILTIN_THEMES.map((pack) => (
+        <ThemeRow key={pack.id} pack={pack} active={pack.id === activeId} onSelect={onSelect} />
+      ))}
+      {customThemes.length > 0 && (
+        <>
+          <div className="theme-picker__section-label">Imported packs</div>
+          {customThemes.map((pack) => (
+            <ThemeRow
+              key={pack.id}
+              pack={pack}
+              active={pack.id === activeId}
+              onSelect={onSelect}
+              onDelete={handleDelete}
+            />
+          ))}
+        </>
+      )}
+      <div className="theme-picker__divider" />
+      <button type="button" className="theme-picker__action" onClick={() => setPasteOpen((v) => !v)}>
+        {pasteOpen ? 'Hide paste import' : 'Paste pack JSON'}
+      </button>
+      <button type="button" className="theme-picker__action" onClick={handleImportFile}>
+        Import pack file…
+      </button>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".json,application/json"
+        hidden
+        onChange={handleImportFile}
+      />
+      {importError && <div className="theme-picker__error">{importError}</div>}
+      {pasteOpen && (
+        <div className="theme-picker__paste">
+          <textarea
+            value={pasteText}
+            onChange={(e) => setPasteText(e.target.value)}
+            rows={4}
+            placeholder='{"id":"my-pack","name":"My Pack","author":"…","vars":{"accent":"#00aaff"}}'
+          />
+          <div className="theme-picker__paste-actions">
+            <button type="button" onClick={() => importFromText(pasteText)} disabled={!pasteText.trim()}>
+              Import
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Titlebar quick-access popover — a thin wrapper around ThemePickerMenu that
+// adds the 🎨 toggle button and open/close (outside-click, Escape) behavior.
+export function ThemePicker({ activeId, onSelect }: ThemePickerProps) {
+  const [open, setOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
     <div className="theme-picker" ref={menuRef}>
       <button
         type="button"
@@ -150,66 +232,7 @@ export function ThemePicker({ activeId, onSelect }: ThemePickerProps) {
       >
         🎨
       </button>
-      {open && (
-        <div className="theme-picker__menu" role="menu" aria-label="Theme packs">
-          <div className="theme-picker__section-label">Theme</div>
-          {BUILTIN_THEMES.map((pack) => (
-            <ThemeRow key={pack.id} pack={pack} active={pack.id === activeId} onSelect={onSelect} />
-          ))}
-          {customThemes.length > 0 && (
-            <>
-              <div className="theme-picker__section-label">Imported packs</div>
-              {customThemes.map((pack) => (
-                <ThemeRow
-                  key={pack.id}
-                  pack={pack}
-                  active={pack.id === activeId}
-                  onSelect={onSelect}
-                  onDelete={handleDelete}
-                />
-              ))}
-            </>
-          )}
-          <div className="theme-picker__divider" />
-          <button
-            type="button"
-            className="theme-picker__action"
-            onClick={() => setPasteOpen((v) => !v)}
-          >
-            {pasteOpen ? 'Hide paste import' : 'Paste pack JSON'}
-          </button>
-          <button type="button" className="theme-picker__action" onClick={handleImportFile}>
-            Import pack file…
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".json,application/json"
-            hidden
-            onChange={handleImportFile}
-          />
-          {importError && <div className="theme-picker__error">{importError}</div>}
-          {pasteOpen && (
-            <div className="theme-picker__paste">
-              <textarea
-                value={pasteText}
-                onChange={(e) => setPasteText(e.target.value)}
-                rows={4}
-                placeholder='{"id":"my-pack","name":"My Pack","author":"…","vars":{"accent":"#00aaff"}}'
-              />
-              <div className="theme-picker__paste-actions">
-                <button
-                  type="button"
-                  onClick={() => importFromText(pasteText)}
-                  disabled={!pasteText.trim()}
-                >
-                  Import
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
+      {open && <ThemePickerMenu activeId={activeId} onSelect={onSelect} />}
     </div>
   );
 }

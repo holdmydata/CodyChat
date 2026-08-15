@@ -192,7 +192,7 @@ Hit directly by the user: typed a correction ("we're working in D:, not C:") int
 
 ### Working-directory gap recurred for real (Phase 3, 2026-08-14)
 
-During the 9B graph-view dogfood test, the model needed to be manually corrected mid-conversation that the project lives on `D:` rather than `C:`. The environment-context fix (see above) only injects generic OS folders — home/Documents/Desktop/Downloads under `C:\Users\...` — nothing in the auto-injected context points at the actual project root on `D:\MeanSquares\AI`. Same class of gap as the original duck-SVG path-guessing incident that motivated the environment-context fix, just one level up: OS-level facts were fixed, project-level facts weren't. Logged as a stronger, now-evidence-backed case for the "working directory concept" backlog item — not built yet.
+During the 9B graph-view dogfood test, the model needed to be manually corrected mid-conversation that the project lives on `D:` rather than `C:`. The environment-context fix (see above) only injects generic OS folders — home/Documents/Desktop/Downloads under `C:\Users\...` — nothing in the auto-injected context points at the actual project root on `D:\MeanSquares\CodyChat`. Same class of gap as the original duck-SVG path-guessing incident that motivated the environment-context fix, just one level up: OS-level facts were fixed, project-level facts weren't. Logged as a stronger, now-evidence-backed case for the "working directory concept" backlog item — not built yet.
 
 ### Theme pack system + titlebar theme picker (Phase 3, 2026-08-14)
 
@@ -215,3 +215,45 @@ User request: "style this chat a bit better... with some theme pickers... an opt
 **Relation to the presentation-paradigm question (companion vs. game-menu):** packs are a lower-level mechanism — they reskin *colors* within the current chat paradigm. The paradigm decision (different data shapes and update rhythms, see above) is its own future piece; a pack is what a *mode* would be skinned with, not a mode itself.
 
 `tsc`/`cargo` run and live verification pending — tracked in [[Kanban]] "To Test."
+
+### Theme picker color fixes (Phase 3, 2026-08-15)
+
+Two bugs in the theme pack system above, fixed but never separately tracked: a swatch-backdrop compositing bug (a pack's swatch preview composited its accent/bg split over the *currently active* theme's menu background rather than its own, so e.g. Light's swatch read muddy while Dark was active — fixed by giving every swatch a fixed, scheme-matched backdrop instead of the live one) and a Psyduck Yellow accent-hue mismatch. Documented here retroactively; doesn't close the "Theme pack system" To Test item in [[Kanban]] on its own.
+
+### `read_theme_pack` was missing (Phase 3, 2026-08-15)
+
+Real gap found while investigating an unrelated report: the theme-pack Done entry above (2026-08-14) claims `read_theme_pack` was built alongside the pack system, but it was never actually registered in `lib.rs` or defined in `commands.rs`/`skills.rs` — "Import pack file…" in the picker called a Tauri command that didn't exist. Likely lost or never committed; the claim in this doc's history stands uncorrected above since it's a record of intent at the time, not current state. Fixed: added `read_theme_pack` (plain `fs::read_to_string`, no validation — `sanitizeThemePack` on the JS side remains the only gate before anything reaches the DOM as CSS) to `commands.rs`, registered it in `lib.rs`, added 2 unit tests (reads real content back, errors on a missing file). `cargo test` passes both. Live click-through of the actual import button still pending.
+
+### Search & shell tools (Phase 3, 2026-08-15)
+
+Two new skills in `skills.rs`, alongside `read_file`/`write_file`/`list_directory`:
+
+- **`search_files`** — the backlogged grep tool: recursive regex search under a directory (case-insensitive by default), optional filename filter (`*.ext` suffix or a plain substring — deliberately not a full glob engine, no crate pulled in for it), skips common build-noise directories and binary files, capped at 200/1000 results and 20k files scanned so it can't run away on a large tree. Solves the actual motivation from [[Kanban]] Backlog: locating something across a codebase without paying `read_file`'s 200KB-per-file cap on every candidate file.
+- **`execute_command`** — shell access, the single biggest capability gap vs. Claude Code per the backlog note that flagged it. Runs via `cmd /C` on Windows (`sh -c` elsewhere), captures stdout/stderr on background threads read concurrently with the wait loop (reading only after the process exits risks a classic pipe-buffer deadlock), 30s timeout with kill, output truncated past 100KB.
+
+**Approval-flow decision, since the backlog item explicitly flagged this as needing one:** no new gating mechanism was built. `useChat.ts`'s `requestApproval()` already routes *every* tool call through an explicit Approve/Deny prompt before execution, unconditionally — that predates these two tools and already satisfies "shell commands need approval" without any special-casing. What *was* added: a risk-tier badge (Read-only / Write / Execute, `lib/toolConfig.ts`) shown on `ToolApprovalPrompt` and in the new Settings → Tools list, with the Execute tier getting a danger-tinted border — so a shell-command approval is visually distinct from a routine file read before the user clicks anything, without changing the underlying gate.
+
+Both tools' schemas are appended to `get_tool_definitions()` (same single-source-of-truth pattern as the existing three), and both commands are registered in `lib.rs`. `cargo check`/`tsc --noEmit` clean; not yet exercised live through the real Tauri shell — only structurally verified via a browser-only Vite dev-server preview, which renders the UI but can't reach `invoke()` (no Tauri IPC bridge outside the packaged app).
+
+### Settings menu: Theme / General / Tools (Phase 3, 2026-08-15)
+
+Not a prior [[Kanban]] item — net-new, built alongside the search/shell tools above to give the new Tools list (and the theme picker, and app-level settings generally) an actual home instead of scattering across the titlebar and the per-conversation panel.
+
+**Titlebar:** a new ⚙ button opens `SettingsMenu` in place of the chat pane (same `mainView` pattern the digest view already used). Freed up ⚙ by moving the digest/tasks toggle to 📋 — it had been sitting on the gear icon since Phase 2, which read as "settings" even though it always meant "show loopx tasks."
+
+**`SettingsMenu.tsx`**, three tabs:
+- **Theme** — embeds `ThemePickerMenu`, factored out of `ThemePicker.tsx` so the titlebar 🎨 popover and this inline tab share one component and one `localStorage`-backed custom-theme list rather than duplicating the picker. Below it, a placeholder card noting the pack-builder form (see [[Kanban]] Ready) is planned but not built.
+- **General** — the Ollama base URL, moved here from the per-conversation `SettingsPanel`. It was never actually per-conversation (one value, shared app-wide via `App.tsx` state) — `SettingsPanel` now shows it read-only with a pointer to where to change it, rather than a second editable copy that happened to write the same underlying value.
+- **Tools** — every tool from `get_tool_definitions()` listed with its real description (not duplicated — pulled straight from the Rust schema) plus the risk badge and an enable/disable toggle. Disabling a tool adds its name to a `localStorage`-backed set (`lib/toolConfig.ts`) that `useChat.ts` filters `toolsRef.current` against on every turn — the tool is stripped from what's sent to Ollama entirely, a stronger gate than approval (the model can't even request it), and takes effect on the very next message without a restart. Below the list, a placeholder noting MCP connector support is planned but not wired up (no connection UI, no protocol client) — tracked as a new Backlog item in [[Kanban]].
+
+`tsc --noEmit` clean. Verified structurally via the Vite dev-server preview (tab switching, layout, the base-URL field's move, graceful `invoke()` failure with no UI crash outside the real app) — the actual `invoke()`-backed content (live tool list, base-URL persistence round-trip) needs a pass through the real Tauri shell.
+
+### Working-directory gap actually fixed (Phase 3, 2026-08-15)
+
+Follow-up to "Working-directory gap recurred for real" above. `commands.rs::get_environment_info` now also reports `project_root`, folded into the same system-prompt block as the existing OS folder facts (`lib/environment.ts::formatEnvironmentContext`).
+
+**Resolved via `env!("CARGO_MANIFEST_DIR")` at compile time** — this crate's own directory (`.../ui/src-tauri`) is baked into the binary at build time; two `.parent()` calls walk up to the actual repo root. Correct for how this app is actually used today (built and run on the same dev machine by the same person), deliberately not `std::env::current_dir()` (reflects how the process was launched — varies by `cargo tauri dev` vs. a shortcut vs. the tray — not the repo's actual location, so it would've been less reliable, not more). **Explicit tradeoff, not hidden:** this is a compile-time fact, not a runtime lookup — if the repo is ever moved again without a rebuild, `project_root` goes stale until the next `cargo build`, the same class of staleness as the `target/` build-cache paths that had to be cleaned out after the MeanSquares→CodyChat rename earlier this project.
+
+Doesn't close the fuller "working directory concept" backlog item (letting a conversation point at an arbitrary *different* project folder) — only fixes this app's own project root, which is what actually recurred as a live bug twice.
+
+3 Rust unit tests added, including one that structurally verifies the resolved path contains `ui/` and `docs/` (rather than asserting a hardcoded `D:\...\CodyChat` string), so the test itself doesn't go stale on the next rename. `cargo test`, `cargo check`, and `tsc --noEmit` all clean.

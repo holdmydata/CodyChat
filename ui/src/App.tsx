@@ -5,6 +5,7 @@ import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
 import { LoopxDigest } from './components/LoopxDigest';
 import { ThemePicker } from './components/ThemePicker';
+import { SettingsMenu } from './components/SettingsMenu';
 import { useConversations } from './hooks/useConversations';
 import { useChat } from './hooks/useChat';
 import {
@@ -14,6 +15,8 @@ import {
   loadCustomThemes,
   setActiveThemeId,
 } from './lib/themes';
+import { getToolDefinitions, type ToolDefinition } from './lib/skills';
+import { loadDisabledTools, saveDisabledTools } from './lib/toolConfig';
 
 const DEFAULT_MODEL = 'llama3.2';
 const BASE_URL_KEY = 'ollama-ui:base-url';
@@ -38,6 +41,27 @@ function App() {
     invoke<{ version: string; tauri_version: string }>('get_app_info')
       .then((info) => setAppInfo({ version: info.version, tauriVersion: info.tauri_version }))
       .catch((err) => console.error('get_app_info failed:', err));
+  }, []);
+
+  // Fetched independently of useChat's own (lazy, per-turn) copy so the
+  // Settings → Tools list has something to render before the user has sent
+  // a first message in any conversation.
+  const [toolDefs, setToolDefs] = useState<ToolDefinition[]>([]);
+  useEffect(() => {
+    getToolDefinitions()
+      .then(setToolDefs)
+      .catch((err) => console.error('getToolDefinitions failed:', err));
+  }, []);
+
+  const [disabledTools, setDisabledTools] = useState<Set<string>>(loadDisabledTools);
+  const toggleTool = useCallback((name: string) => {
+    setDisabledTools((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      saveDisabledTools(next);
+      return next;
+    });
   }, []);
 
   const [baseUrl, setBaseUrl] = useState(
@@ -77,7 +101,11 @@ function App() {
     setActiveThemeId(id);
   }, []);
 
-  const [showDigest, setShowDigest] = useState(false);
+  type MainView = 'chat' | 'digest' | 'settings';
+  const [mainView, setMainView] = useState<MainView>('chat');
+  const toggleView = useCallback((view: MainView) => {
+    setMainView((current) => (current === view ? 'chat' : view));
+  }, []);
 
   const handleBaseUrlChange = useCallback((url: string) => {
     setBaseUrl(url);
@@ -108,6 +136,7 @@ function App() {
     baseUrl,
     conversation: active,
     onMessagesChange: setMessages,
+    disabledTools,
   });
 
   const handleSend = useCallback(
@@ -135,13 +164,22 @@ function App() {
         <button
           type="button"
           className="titlebar__digest-toggle"
-          onClick={() => setShowDigest((v) => !v)}
-          aria-label={showDigest ? 'Show chat' : 'Show tasks'}
-          title={showDigest ? 'Show chat' : 'Show tasks'}
+          onClick={() => toggleView('digest')}
+          aria-label={mainView === 'digest' ? 'Show chat' : 'Show tasks'}
+          title={mainView === 'digest' ? 'Show chat' : 'Show tasks'}
+        >
+          📋
+        </button>
+        <ThemePicker activeId={themeId} onSelect={handleThemeSelect} />
+        <button
+          type="button"
+          className="titlebar__settings-toggle"
+          onClick={() => toggleView('settings')}
+          aria-label={mainView === 'settings' ? 'Show chat' : 'Settings'}
+          title={mainView === 'settings' ? 'Show chat' : 'Settings'}
         >
           ⚙
         </button>
-        <ThemePicker activeId={themeId} onSelect={handleThemeSelect} />
         {appInfo && (
           <span className="titlebar__info">
             v{appInfo.version} · Tauri {appInfo.tauriVersion}
@@ -149,8 +187,20 @@ function App() {
         )}
       </div>
       <div className="app">
-        {showDigest ? (
+        {mainView === 'digest' ? (
           <LoopxDigest />
+        ) : mainView === 'settings' ? (
+          <SettingsMenu
+            baseUrl={baseUrl}
+            onBaseUrlChange={handleBaseUrlChange}
+            appVersion={appInfo?.version}
+            tauriVersion={appInfo?.tauriVersion}
+            themeId={themeId}
+            onThemeSelect={handleThemeSelect}
+            tools={toolDefs}
+            disabledTools={disabledTools}
+            onToggleTool={toggleTool}
+          />
         ) : (
           <>
             {!sidebarCollapsed && (
@@ -167,7 +217,6 @@ function App() {
               <ChatWindow
                 conversation={active}
                 baseUrl={baseUrl}
-                onBaseUrlChange={handleBaseUrlChange}
                 onModelChange={(model) => updateConversation(active.id, { model })}
                 onSystemPromptChange={(systemPrompt) => updateConversation(active.id, { systemPrompt })}
                 onParamsChange={(params) => updateConversation(active.id, { params })}

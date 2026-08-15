@@ -1,6 +1,7 @@
 //! Tauri commands the React frontend can call. Kept separate from the
 //! window-chrome logic in lib.rs, which is pure Rust with no IPC involved.
 
+use std::fs;
 use std::process::Command;
 
 use serde::Serialize;
@@ -30,6 +31,7 @@ pub struct EnvironmentInfo {
     documents_dir: String,
     desktop_dir: String,
     downloads_dir: String,
+    project_root: String,
 }
 
 #[tauri::command]
@@ -38,12 +40,30 @@ pub fn get_environment_info() -> EnvironmentInfo {
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default();
     let home_path = std::path::PathBuf::from(&home);
+
+    // Fixes a real, recurring gap (docs/Kanban.md): this env context used
+    // to only cover generic OS folders, so the model had no way to know the
+    // project itself lives on D:, not C: — it had to be corrected mid-
+    // conversation. CARGO_MANIFEST_DIR is baked in at *compile* time as
+    // this crate's own directory (.../ui/src-tauri); two levels up is the
+    // actual repo root (ui/src-tauri -> ui -> repo root). Correct for how
+    // this app is actually used today (built and run on the same dev
+    // machine) — if the repo is ever moved after a build, this goes stale
+    // until the next rebuild, same class of staleness as any other
+    // compile-time path baked into a binary.
+    let project_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .and_then(|p| p.parent())
+        .map(|p| p.display().to_string())
+        .unwrap_or_default();
+
     EnvironmentInfo {
         os: std::env::consts::OS.to_string(),
         documents_dir: home_path.join("Documents").display().to_string(),
         desktop_dir: home_path.join("Desktop").display().to_string(),
         downloads_dir: home_path.join("Downloads").display().to_string(),
         home_dir: home,
+        project_root,
     }
 }
 
@@ -83,12 +103,12 @@ const TRACKED_GOALS: &[TrackedGoal] = &[
     TrackedGoal {
         goal_id: "meansquares-shell-goal",
         agent_id: "ollama-harness-01",
-        project_dir: r"d:\MeanSquares\AI\ui",
+        project_dir: r"d:\MeanSquares\CodyChat\ui",
     },
     TrackedGoal {
         goal_id: "kanban-reader-goal",
         agent_id: "ollama-harness-01",
-        project_dir: r"d:\MeanSquares\AI\toys\kanban-reader",
+        project_dir: r"d:\MeanSquares\CodyChat\toys\kanban-reader",
     },
 ];
 
@@ -156,4 +176,55 @@ fn fetch_one(goal: &TrackedGoal) -> GoalDigest {
 #[tauri::command]
 pub fn get_loopx_digest() -> Vec<GoalDigest> {
     TRACKED_GOALS.iter().map(fetch_one).collect()
+}
+
+// Theme pack import (lib/themes.ts::readThemePackFile): reads a pack file
+// from disk through the Rust shell rather than a webview file input, same
+// posture as the read_file/write_file skills — the frontend never touches
+// the disk directly. No validation here; sanitizeThemePack on the JS side
+// is what decides whether the contents are usable before anything is
+// injected as CSS.
+#[tauri::command]
+pub fn read_theme_pack(path: String) -> Result<String, String> {
+    fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn read_theme_pack_returns_file_contents() {
+        let path = std::env::temp_dir().join(format!("theme_pack_test_{}.json", std::process::id()));
+        let contents = "{\"id\":\"test\",\"name\":\"Test\",\"vars\":{\"accent\":\"#000000\"}}";
+        fs::write(&path, contents).unwrap();
+
+        let result = read_theme_pack(path.display().to_string());
+
+        fs::remove_file(&path).ok();
+        assert_eq!(result.unwrap(), contents);
+    }
+
+    #[test]
+    fn read_theme_pack_errors_on_missing_file() {
+        let missing = std::env::temp_dir().join("theme_pack_test_does_not_exist.json");
+        assert!(read_theme_pack(missing.display().to_string()).is_err());
+    }
+
+    #[test]
+    fn project_root_resolves_two_levels_above_src_tauri() {
+        let info = get_environment_info();
+        // CARGO_MANIFEST_DIR two levels up should land on the repo root
+        // that actually contains this crate, whatever machine/path it was
+        // built on — checked structurally rather than against a hardcoded
+        // "D:\...\CodyChat" string so the test doesn't itself go stale on
+        // the next rename.
+        let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let expected = manifest_dir.parent().and_then(|p| p.parent()).unwrap();
+        assert_eq!(info.project_root, expected.display().to_string());
+        // And it should actually contain this repo's known top-level dirs.
+        let root = std::path::Path::new(&info.project_root);
+        assert!(root.join("ui").is_dir());
+        assert!(root.join("docs").is_dir());
+    }
 }

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { ToolCall } from '../types';
 import { summarizeValue } from '../lib/format';
+import { RISK_LABEL, riskOf } from '../lib/toolConfig';
 
 interface ToolApprovalPromptProps {
   call: ToolCall;
@@ -11,9 +12,13 @@ interface ToolApprovalPromptProps {
 export function ToolApprovalPrompt({ call, onApprove, onDeny }: ToolApprovalPromptProps) {
   const [expanded, setExpanded] = useState(false);
   const args = Object.entries(call.arguments);
+  const risk = riskOf(call.name);
 
   return (
-    <div className="tool-approval">
+    <div className={`tool-approval tool-approval--${risk}`}>
+      <div className={`tool-approval__risk-badge tool-approval__risk-badge--${risk}`}>
+        {RISK_LABEL[risk]}
+      </div>
       <div className="tool-approval__text">
         Model wants to run <code>{call.name}</code>
         {expanded ? (

@@ -1,4 +1,4 @@
-# MeanSquares AI
+# MeanSquares CodyChat
 
 A modular starter for a custom Ollama-backed agent/harness — deliberately not the stock Open WebUI. Git-initialized locally (2026-08-14, no remote yet) — each subproject (`ui/`, `toys/kanban-reader/`, `harness/`) has its own `.gitignore` covering `node_modules`, Rust `target/`, and per-project loopx state (`.loopx/`, `.codex/goals/`).
 

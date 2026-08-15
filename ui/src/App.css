@@ -44,6 +44,21 @@
   background: var(--bg);
 }
 
+.titlebar__settings-toggle {
+  app-region: no-drag;
+  height: 100%;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.titlebar__settings-toggle:hover {
+  background: var(--bg);
+}
+
 .titlebar__info {
   font-size: 11px;
   color: var(--text);
@@ -568,6 +583,40 @@
   text-decoration: underline;
 }
 
+/* Execute-risk calls (shell commands) get a stronger, danger-tinted border
+   on the whole prompt so the riskiest tool in the app visually stands out
+   from a routine read_file/list_directory approval. */
+.tool-approval--execute {
+  border-top-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--accent-bg));
+}
+
+.tool-approval__risk-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 6px;
+}
+
+.tool-approval__risk-badge--read {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.tool-approval__risk-badge--write {
+  background: color-mix(in srgb, orange 20%, transparent);
+  color: color-mix(in srgb, orange 55%, var(--text-h));
+}
+
+.tool-approval__risk-badge--execute {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+  color: var(--danger);
+}
+
 /* Activity tracker — a step-by-step progress list. Each step is a
    collapsed-by-default title button (status icon + tool name); expanding
    it reveals args/result inline, wrapping within the button rather than
@@ -902,6 +951,18 @@
   app-region: no-drag;
 }
 
+/* Embedded in the Settings menu (SettingsMenu.tsx) rather than as a
+   floating titlebar popover — reset positioning/chrome to sit inline. */
+.theme-picker__menu--embedded {
+  position: static;
+  width: auto;
+  margin-top: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
+}
+
 .theme-picker__section-label {
   font-size: 10px;
   text-transform: uppercase;
@@ -1053,4 +1114,206 @@
 .theme-picker__paste-actions button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+/* Settings menu — app-level home (Theme / General / Tools), replaces the
+   chat pane the same way LoopxDigest does (see App.tsx's mainView). Distinct
+   from .settings-panel, which is the per-conversation model/prompt/params
+   panel inline in ChatWindow. */
+
+.settings-menu {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.settings-menu__tabs {
+  display: flex;
+  gap: 4px;
+  padding: 10px 16px 0;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.settings-menu__tab {
+  padding: 8px 14px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.settings-menu__tab:hover {
+  color: var(--text-h);
+}
+
+.settings-menu__tab--active {
+  color: var(--text-h);
+  border-bottom-color: var(--accent);
+}
+
+.settings-menu__content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 20px;
+}
+
+.settings-menu__section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 480px;
+}
+
+.settings-menu__heading {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-h);
+}
+
+.settings-menu__hint {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.7;
+  line-height: 1.5;
+}
+
+.settings-menu__about {
+  margin: 8px 0 0;
+  font-size: 11px;
+  opacity: 0.5;
+}
+
+.settings-menu__placeholder {
+  margin-top: 4px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  opacity: 0.75;
+}
+
+.settings-menu__tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-menu__tool-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-menu__tool-row:last-child {
+  border-bottom: none;
+}
+
+.settings-menu__tool-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-menu__tool-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.settings-menu__tool-desc {
+  margin: 4px 0 0;
+  font-size: 12px;
+  opacity: 0.7;
+  line-height: 1.4;
+}
+
+.settings-menu__risk-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.settings-menu__risk-badge--read {
+  background: var(--accent-bg);
+  color: var(--accent);
+}
+
+.settings-menu__risk-badge--write {
+  background: color-mix(in srgb, orange 20%, transparent);
+  color: color-mix(in srgb, orange 55%, var(--text-h));
+}
+
+.settings-menu__risk-badge--execute {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+  color: var(--danger);
+}
+
+/* Toggle switch for enabling/disabling a tool. A plain checkbox visually
+   restyled as a track+thumb, not a separate widget — keeps it keyboard/
+   screen-reader accessible for free. */
+.settings-menu__toggle {
+  position: relative;
+  display: inline-block;
+  width: 34px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.settings-menu__toggle input {
+  position: absolute;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  cursor: pointer;
+}
+
+.settings-menu__toggle-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 0.15s ease;
+  pointer-events: none;
+}
+
+.settings-menu__toggle-track::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--bg-alt);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.15s ease;
+}
+
+.settings-menu__toggle input:checked + .settings-menu__toggle-track {
+  background: var(--accent);
+}
+
+.settings-menu__toggle input:checked + .settings-menu__toggle-track::before {
+  transform: translateX(14px);
+}
+
+.settings-menu__toggle input:focus-visible + .settings-menu__toggle-track {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
 }

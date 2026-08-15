@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { streamChat, type WireMessage } from '../lib/ollama';
-import { executeSkill, getToolDefinitions } from '../lib/skills';
+import { executeSkill, getToolDefinitions, type ToolDefinition } from '../lib/skills';
 import { getEnvironmentInfo, formatEnvironmentContext } from '../lib/environment';
 import { summarizeArgs, summarizeValue } from '../lib/format';
 import type { ActivityStep, Conversation, Message, ToolCall } from '../types';
@@ -28,6 +28,8 @@ interface UseChatArgs {
   baseUrl: string;
   conversation: Conversation | null;
   onMessagesChange: (id: string, messages: Message[]) => void;
+  /** Tool names to strip from the `tools` list sent to Ollama — see Settings → Tools. */
+  disabledTools?: Set<string>;
 }
 
 function toWireMessages(messages: Pick<Message, 'role' | 'content' | 'toolCalls' | 'toolCallId'>[]): WireMessage[] {
@@ -41,7 +43,7 @@ function toWireMessages(messages: Pick<Message, 'role' | 'content' | 'toolCalls'
   }));
 }
 
-export function useChat({ baseUrl, conversation, onMessagesChange }: UseChatArgs) {
+export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools }: UseChatArgs) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingToolCall, setPendingToolCall] = useState<ToolCall | null>(null);
@@ -55,8 +57,11 @@ export function useChat({ baseUrl, conversation, onMessagesChange }: UseChatArgs
   }, []);
   const abortRef = useRef<AbortController | null>(null);
   const approvalResolverRef = useRef<((approved: boolean) => void) | null>(null);
-  // Tool schemas rarely change within a session — fetched once, lazily.
-  const toolsRef = useRef<unknown[] | null>(null);
+  // Full, unfiltered schema list — fetched once, lazily (schemas rarely
+  // change within a session). Filtered by disabledTools per-turn below so
+  // toggling a tool off in Settings takes effect on the very next message,
+  // not just for conversations started after the toggle.
+  const toolsRef = useRef<ToolDefinition[] | null>(null);
   // Real OS/home/Documents paths, fetched once and folded into every
   // turn's system prompt so the model doesn't have to guess at paths.
   const envContextRef = useRef<string | null>(null);
@@ -140,13 +145,17 @@ export function useChat({ baseUrl, conversation, onMessagesChange }: UseChatArgs
         let assembledThinking = '';
         let toolCalls: ToolCall[] | null = null;
 
+        const activeTools = toolsRef.current?.filter(
+          (t) => !disabledTools?.has(t.function.name)
+        );
+
         await streamChat({
           baseUrl,
           model: conversation.model,
           messages: history,
           params: conversation.params,
           signal: controller.signal,
-          tools: toolsRef.current ?? undefined,
+          tools: activeTools?.length ? activeTools : undefined,
           onToken: (token) => {
             assembled += token;
             current = current.map((m) => (m.id === assistantMessage.id ? { ...m, content: assembled } : m));
@@ -239,7 +248,7 @@ export function useChat({ baseUrl, conversation, onMessagesChange }: UseChatArgs
         abortRef.current = null;
       }
     },
-    [baseUrl, conversation, onMessagesChange, requestApproval, isStreaming]
+    [baseUrl, conversation, onMessagesChange, requestApproval, isStreaming, disabledTools]
   );
 
   return {
