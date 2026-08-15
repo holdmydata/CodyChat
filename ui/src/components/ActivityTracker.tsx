@@ -14,14 +14,18 @@ export const STATUS_ICON: Record<ActivityStep['status'], string> = {
   error: '⚠️',
 };
 
-function ActivityTrackerStep({ step, collapsed }: { step: ActivityStep; collapsed: boolean }) {
+// Exported so MessageBubble's persisted "Activity log" can reuse this
+// exact component instead of maintaining its own duplicate copy — a
+// second copy previously drifted out of sync (unstyled classes, a second
+// STATUS_ICON, dropped argsSummary).
+export function ActivityTrackerStep({ step, collapsed }: { step: ActivityStep; collapsed: boolean }) {
   const [expanded, setExpanded] = useState(!collapsed);
 
   return (
     <div className="activity-tracker__step-wrapper">
       <button
         type="button"
-        className={`activity-tracker__step-title ${expanded ? 'activity-tracker__step-title--expanded' : ''}`}
+        className={`activity-tracker__step-title activity-tracker__step-title--${step.status} ${expanded ? 'activity-tracker__step-title--expanded' : ''}`}
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
         aria-label={`${step.toolName} — ${expanded ? 'collapse' : 'expand'} activity details`}
@@ -31,6 +35,7 @@ function ActivityTrackerStep({ step, collapsed }: { step: ActivityStep; collapse
         {expanded && (
           <>
             <span className="activity-tracker__separator">▼</span>
+            <span className="activity-tracker__args">({step.argsSummary})</span>
             {step.resultSummary && (
               <span className="activity-tracker__result">→ {step.resultSummary}</span>
             )}

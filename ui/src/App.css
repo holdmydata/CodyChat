@@ -451,6 +451,7 @@
   opacity: 0.85;
   font-size: 13px;
   font-style: italic;
+  overflow-wrap: anywhere;
 }
 
 .message--tool {
@@ -467,6 +468,7 @@
   font-size: 12px;
   font-family: var(--mono);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   max-height: 160px;
   overflow-y: auto;
 }
@@ -484,6 +486,7 @@
 .message__tool-call-args {
   font-size: 11px;
   opacity: 0.8;
+  overflow-wrap: anywhere;
 }
 
 /* Tool approval prompt */
@@ -565,10 +568,12 @@
   text-decoration: underline;
 }
 
-/* Activity tracker — a step-by-step progress list: each step is a node on
-   a vertical timeline, with a connector line running from node to node.
-   .activity-tracker--log reuses the same step markup inside a message
-   bubble (persisted log), restyled below as a compact flow graph. */
+/* Activity tracker — a step-by-step progress list. Each step is a
+   collapsed-by-default title button (status icon + tool name); expanding
+   it reveals args/result inline, wrapping within the button rather than
+   overflowing. .activity-tracker--log reuses the exact same step markup
+   inside a message bubble (persisted log), with no border/background of
+   its own — the bubble already provides those. */
 
 .activity-tracker {
   padding: 10px 16px;
@@ -581,23 +586,32 @@
   overflow-y: auto;
 }
 
+.activity-tracker--log {
+  padding: 4px 0 0;
+  border-top: none;
+  background: none;
+  max-height: none;
+  overflow: visible;
+}
+
 .activity-tracker__step-wrapper {
   position: relative;
   width: 100%;
 }
 
-/* Collapsible step title button */
 .activity-tracker__step-title {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
+  max-width: 100%;
   padding: 4px 8px;
   border-radius: 6px;
   cursor: pointer;
   font-size: 12px;
   background: var(--bg);
   border: 1px solid var(--border);
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .activity-tracker__step-title:hover {
@@ -607,6 +621,46 @@
 .activity-tracker__step-title--expanded {
   background: var(--accent-bg);
   border-color: var(--accent-border);
+}
+
+/* Waiting on the user — dashed ring reads as "paused, needs input". */
+.activity-tracker__step-title--pending_approval {
+  border-style: dashed;
+}
+
+/* In-progress step: accent border + pulsing icon so the active step
+   reads at a glance. */
+.activity-tracker__step-title--running {
+  border-color: var(--accent-border);
+}
+
+.activity-tracker__step-title--running .activity-tracker__status-icon {
+  animation: activity-tracker-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes activity-tracker-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-tracker__step-title--running .activity-tracker__status-icon {
+    animation: none;
+  }
+}
+
+.activity-tracker__step-title--error,
+.activity-tracker__step-title--denied {
+  border-color: var(--danger);
+}
+
+.activity-tracker__step-title--done {
+  opacity: 0.75;
 }
 
 .activity-tracker__status-icon {
@@ -624,6 +678,7 @@
 .activity-tracker__args {
   opacity: 0.7;
   font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 /* Separator chevron that appears when expanded */
@@ -641,6 +696,7 @@
   font-style: italic;
   color: var(--text);
   line-height: 14px;
+  overflow-wrap: anywhere;
 }
 
 .activity-tracker__error {
@@ -649,132 +705,6 @@
   font-style: italic;
   color: var(--danger);
   display: inline-block;
-}
-
-/* In-progress step: accent pill + pulsing node so the active step reads
-   at a glance. */
-.activity-tracker__step--running {
-  background: var(--accent-bg);
-  color: var(--text-h);
-}
-
-.activity-tracker__step--running .activity-tracker__status-icon {
-  border-color: var(--accent-border);
-  background: var(--accent-bg);
-  animation: activity-tracker-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes activity-tracker-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.4;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .activity-tracker__step--running .activity-tracker__status-icon {
-    animation: none;
-  }
-}
-
-.activity-tracker__step--denied,
-.activity-tracker__step--error {
-  color: var(--danger);
-}
-
-.activity-tracker__step--error .activity-tracker__status-icon,
-.activity-tracker__step--denied .activity-tracker__status-icon {
-  border-color: var(--danger);
-}
-
-.activity-tracker__step--done {
-  opacity: 0.75;
-}
-
-/* Embedded in a message bubble (persisted log) rather than the live
-   full-width bar under the chat. Instead of a vertical list it renders
-   as a compact flow graph: status nodes chained by connectors, snaking
-   across a 3-column grid so long logs stay inside the ~75%-wide bubble.
-   No border/background of its own — the bubble provides those. All node
-   and status styling (circles, tints, pulse, label colors) is inherited
-   from the base rules above; only the layout is overridden here. */
-.activity-tracker--log {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 26px 10px;
-  padding: 4px 0 0;
-  max-height: none;
-  overflow: visible;
-}
-
-/* Step rows become compact flow nodes: the label text stacks under the
-   status node instead of flowing beside it. */
-.activity-tracker--log .activity-tracker__step {
-  flex-direction: column;
-  flex-wrap: nowrap;
-  align-items: flex-start;
-  gap: 3px;
-  padding: 0;
-  margin: 0;
-  border-radius: 0;
-}
-
-/* Tool names can be long — clip them to the column rather than letting
-   them push the next column. */
-.activity-tracker--log .activity-tracker__tool {
-  line-height: 1.2;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.activity-tracker--log .activity-tracker__args,
-.activity-tracker--log .activity-tracker__result {
-  line-height: 1.2;
-}
-
-/* Connector from each node to the next one in the flow: a horizontal
-   stub leaving the right edge of the node (left 18px = node width),
-   running to the end of the column. Status tinting (accent for running,
-   danger for error/denied) is inherited from the base ::before rules. */
-.activity-tracker--log .activity-tracker__step::before {
-  left: 18px;
-  top: 9px; /* node center: 18px node / 2 */
-  width: calc(100% - 18px);
-  height: 1px;
-  bottom: auto;
-}
-
-/* Vertical drop from the stub down to the next row's connector line
-   (height = cell height + the 26px row gap, measured from the node
-   center). Suppressed on the final step so the chain doesn't dangle. */
-.activity-tracker--log .activity-tracker__step::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 9px;
-  width: 1px;
-  height: calc(100% + 26px);
-  background: var(--border);
-  z-index: 1;
-}
-
-.activity-tracker--log .activity-tracker__step:last-child::after {
-  content: none;
-}
-
-/* Tint the vertical drop the same way as the horizontal stub. */
-.activity-tracker--log .activity-tracker__step--running::after {
-  background: var(--accent);
-}
-
-.activity-tracker--log .activity-tracker__step--error::after,
-.activity-tracker--log .activity-tracker__step--denied::after {
-  background: var(--danger);
 }
 
 .message__code {
@@ -818,7 +748,7 @@
   transform: rotate(90deg);
 }
 
-.message__thinking {
+.message__thinking-content {
   margin-top: 6px;
   padding: 8px 10px;
   border-left: 2px solid var(--border);
@@ -827,6 +757,7 @@
   font-size: 12px;
   font-family: var(--mono);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   max-height: 240px;
   overflow-y: auto;
 }

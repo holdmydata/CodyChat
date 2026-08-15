@@ -2,6 +2,7 @@ import { useState, type ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import type { ActivityStep, Message } from '../types';
+import { ActivityTrackerStep } from './ActivityTracker';
 
 // react-markdown renders straight to React elements rather than an HTML
 // string, so there's no dangerouslySetInnerHTML/sanitization step needed
@@ -49,62 +50,34 @@ function ThinkingBreakout({ thinking, stillThinking }: { thinking: string; still
         {stillThinking ? 'Thinking…' : 'Thought process'}
       </button>
       {expanded && (
-        <div className="message__thinking-content" style={{ maxWidth: '100%', wordBreak: 'break-word' }}>
-          {thinking}
-        </div>
+        <div className="message__thinking-content">{thinking}</div>
       )}
     </div>
   );
 }
 
-// Helper to render status icons consistent with ActivityTracker
-function StatusIcon({ status }: { status: string }) {
-  const icons: Record<string, string> = {
-    pending_approval: '⏸',
-    running: '⏳',
-    done: '✅',
-    denied: '🚫',
-    error: '⚠️',
-  };
-  return <span className="activity-tracker__icon">{icons[status] || '⏳'}</span>;
-}
-
-function ActivityTrackerStep({ step }: { step: ActivityStep }) {
+function ActivityLogBreakout({ steps }: { steps: ActivityStep[] }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="message__thinking-block">
       <button
         type="button"
-        className={`message__thinking-toggle ${expanded ? 'message__thinking-toggle--expanded' : ''}`}
+        className="message__thinking-toggle"
         onClick={() => setExpanded((v) => !v)}
-        aria-expanded={expanded}
-        aria-label={`${step.toolName} — ${expanded ? 'collapse' : 'expand'} activity details`}
       >
-        <StatusIcon status={step.status} />
-        <code className="message__thinking-tool">{step.toolName}</code>
-        {expanded && (
-          <>
-            <span className="message__thinking-chevron">▼</span>
-            {step.resultSummary && (
-              <span className="message__thinking-result">→ {step.resultSummary}</span>
-            )}
-            {!step.resultSummary && step.status === 'error' && (
-              <span className="message__thinking-error">No result available</span>
-            )}
-          </>
-        )}
+        <span className={`message__thinking-chevron ${expanded ? 'message__thinking-chevron--open' : ''}`}>
+          ▸
+        </span>
+        Activity log ({steps.length} step{steps.length === 1 ? '' : 's'})
       </button>
-    </div>
-  );
-}
-
-function ActivityLogBreakout({ steps }: { steps: ActivityStep[] }) {
-  return (
-    <div className="message__thinking-block-list" role="list" aria-label="Tool activity log">
-      {steps.map((step) => (
-        <ActivityTrackerStep key={step.id} step={step} />
-      ))}
+      {expanded && (
+        <div className="activity-tracker activity-tracker--log" role="list" aria-label="Tool activity log">
+          {steps.map((step) => (
+            <ActivityTrackerStep key={step.id} step={step} collapsed />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -114,7 +87,7 @@ export function MessageBubble({ message, isStreaming }: { message: Message; isSt
     return (
       <div className="message message--tool">
         <div className="message__role">tool result</div>
-        <pre className="message__tool-result" style={{ maxWidth: '100%', wordBreak: 'break-word' }}>{message.content}</pre>
+        <pre className="message__tool-result">{message.content}</pre>
       </div>
     );
   }
@@ -137,14 +110,14 @@ export function MessageBubble({ message, isStreaming }: { message: Message; isSt
         message.toolCalls!.map((call) => (
           <div key={call.id} className="message__tool-call">
             🔧 Called <code>{call.name}</code>
-            <code className="message__tool-call-args" style={{ maxWidth: '100%', wordBreak: 'break-word' }}>{JSON.stringify(call.arguments)}</code>
+            <code className="message__tool-call-args">{JSON.stringify(call.arguments)}</code>
           </div>
         ))}
       {message.content ? (
         <div className="message__content">{renderContent(message.content)}</div>
       ) : stillThinking || hasToolCalls ? null : endedWithNoContent ? (
         <div className="message__content">
-          <span className="message__empty" style={{ maxWidth: '100%', wordBreak: 'break-word' }}>
+          <span className="message__empty">
             No response — the model likely ran out of context space while thinking. Try raising the
             context length in Settings, or ask a more focused question.
           </span>
