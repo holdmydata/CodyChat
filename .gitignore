@@ -1,0 +1,6 @@
+# Claude Code local settings (personal tool-permission grants, per machine)
+.claude/settings.local.json
+
+# OS cruft
+.DS_Store
+Thumbs.db

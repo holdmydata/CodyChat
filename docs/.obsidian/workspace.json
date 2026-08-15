@@ -1,0 +1,217 @@
+{
+  "main": {
+    "id": "28c51bc8450b8906",
+    "type": "split",
+    "children": [
+      {
+        "id": "7feea14f12953483",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "f34e4487346d7303",
+            "type": "leaf",
+            "state": {
+              "type": "kanban",
+              "state": {
+                "file": "Kanban.md",
+                "kanbanViewState": {
+                  "kanban-plugin": "board",
+                  "list-collapse": [
+                    null,
+                    null,
+                    null
+                  ]
+                }
+              },
+              "icon": "lucide-trello",
+              "title": "Kanban"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "vertical"
+  },
+  "left": {
+    "id": "7a7b285fe23b5344",
+    "type": "split",
+    "children": [
+      {
+        "id": "56c721be9cf61d96",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "4b2cd08efa94ea0b",
+            "type": "leaf",
+            "state": {
+              "type": "file-explorer",
+              "state": {
+                "sortOrder": "alphabetical",
+                "autoReveal": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
+            }
+          },
+          {
+            "id": "66c5c7f911487d77",
+            "type": "leaf",
+            "state": {
+              "type": "search",
+              "state": {
+                "query": "",
+                "matchingCase": false,
+                "explainSearch": false,
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical"
+              },
+              "icon": "lucide-search",
+              "title": "搜索"
+            }
+          },
+          {
+            "id": "25f800740ca3a295",
+            "type": "leaf",
+            "state": {
+              "type": "bookmarks",
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "书签"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "right": {
+    "id": "0547de615f8b2fdc",
+    "type": "split",
+    "children": [
+      {
+        "id": "8d12fb9d970d01ab",
+        "type": "tabs",
+        "children": [
+          {
+            "id": "fdade7bf7d6f161d",
+            "type": "leaf",
+            "state": {
+              "type": "backlink",
+              "state": {
+                "file": "Kanban.md",
+                "collapseAll": false,
+                "extraContext": false,
+                "sortOrder": "alphabetical",
+                "showSearch": false,
+                "searchQuery": "",
+                "backlinkCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-coming-in",
+              "title": "Kanban 的反向链接列表"
+            }
+          },
+          {
+            "id": "d46ebc67aba10d5d",
+            "type": "leaf",
+            "state": {
+              "type": "outgoing-link",
+              "state": {
+                "file": "Kanban.md",
+                "linksCollapsed": false,
+                "unlinkedCollapsed": true
+              },
+              "icon": "links-going-out",
+              "title": "Kanban 的出链列表"
+            }
+          },
+          {
+            "id": "6f15ae3245335a42",
+            "type": "leaf",
+            "state": {
+              "type": "tag",
+              "state": {
+                "sortOrder": "frequency",
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "标签"
+            }
+          },
+          {
+            "id": "5d4ab92f74d9645e",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "添加笔记属性"
+            }
+          },
+          {
+            "id": "432e69e98d48e456",
+            "type": "leaf",
+            "state": {
+              "type": "outline",
+              "state": {
+                "file": "Kanban.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Kanban 的大纲"
+            }
+          }
+        ]
+      }
+    ],
+    "direction": "horizontal",
+    "width": 300,
+    "collapsed": true
+  },
+  "left-ribbon": {
+    "hiddenItems": {
+      "switcher:Open quick switcher": false,
+      "graph:Open graph view": false,
+      "canvas:Create new canvas": false,
+      "daily-notes:Open today's daily note": false,
+      "templates:Insert template": false,
+      "command-palette:Open command palette": false,
+      "bases:Create new base": false,
+      "obsidian-kanban:Create new board": false
+    }
+  },
+  "active": "f34e4487346d7303",
+  "lastOpenFiles": [
+    "Kanban.md.tmp.1904.12d8b303c055",
+    "Kanban.md.tmp.1904.7773763689ae",
+    "Kanban.md.tmp.1904.5f99d57e27ba",
+    "Architecture/Frontend.md.tmp.1904.5341d69f68b1",
+    "Kanban.md.tmp.1904.387276c9c3f8",
+    "Kanban.md.tmp.1904.2f96d7550d77",
+    "Kanban.md.tmp.1904.d5d2afad3bab",
+    "Kanban.md.tmp.1904.47dafefc197d",
+    "Kanban.md.tmp.1904.3648c79ea2f4",
+    "Session-Summary-2026-08-14.md",
+    "Kanban.md.tmp.1904.e40c91b95714",
+    "Kanban.md.tmp.1904.66ce94a46313",
+    "Untitled Kanban.md",
+    "Kanban.md",
+    "Architecture/Frontend.md",
+    "未命名.canvas",
+    "Timeline.md",
+    "MEMORY.md"
+  ]
+}

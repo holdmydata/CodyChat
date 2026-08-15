@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+
+# loopx project-local state (private evidence, per-agent identity)
+.loopx/
+.codex/goals/

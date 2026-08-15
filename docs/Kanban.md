@@ -1,0 +1,89 @@
+---
+
+kanban-plugin: board
+
+---
+
+## Backlog
+
+- [ ] Deferred: optional Ollama companion commentary on the toy's parsed board (plain prompt, not tool-calling) #phase1 #harness #deferred
+- [ ] Deferred: decide toy popup styling — companion-style vs. game-menu-style (or both as swappable themes) #phase1 #shell #deferred
+- [ ] Working directory concept (fuller version): let a conversation be scoped to a specific project folder, not just OS-level defaults — environment context (below) covers "where's Documents," this would cover "we're working in this specific project dir." #phase3 #harness #idea
+- [ ] Candidate next dogfooding use case: point the harness at `ui/src/` for a small real fix/feature. Expected to surface two concrete tool gaps fast: (1) a search/grep tool — `read_file`'s 200KB cap + full-content reads get expensive once exploring a real multi-file codebase instead of one path the user already named; (2) a patch/diff-style edit, since `write_file` only does full overwrite — risky and wasteful for a one-line change in a file the model didn't write #phase3 #harness #idea
+- [ ] Shell/command execution tool (`execute_command` or similar) — the biggest remaining gap vs. "work like Claude Code": can't run `tsc`/`cargo check`/tests/git itself right now, has to describe what to run instead of running it. Also the single biggest risk jump of any tool considered so far (arbitrary command execution, not just fixed file operations) — deserves its own approval-UX decision before building (e.g. always show the full command, never summarize; maybe distinguish read-only commands like `git status` from mutating ones) rather than reusing the current pattern by default #phase3 #harness #idea
+- [ ] Better cross-conversation memory (like other tools the user has used) — vague/future, explicitly deferred by user in favor of finishing the core first #phase4 #harness #idea
+- [ ] File-organization use case (e.g. "sort my Downloads folder," "rename these by pattern") — would need a move/rename tool, a different risk tier than write_file since it operates on the user's existing files rather than ones the model created. Bulk operations would need real approval-UX thought (approve-all vs. per-file) before building, not just port the single-call pattern #phase4 #harness #idea
+- [ ] Push toy task through to a finished artifact across multiple sessions #phase3 #harness
+- [ ] More tools beyond read_file/write_file/list_directory — need-driven from actual toy/agent testing, not built speculatively #phase3 #harness
+- [ ] When git gets initialized: add `.loopx/` and `.codex/goals/` (per-project loopx state, contains private evidence) to `.gitignore` #housekeeping
+- [ ] Idea (not committed): a popout "run viewer" — separate small window showing currently-running loopx tasks live as they progress. Might belong to the harness/monitoring layer rather than the chat app itself; decide scope when it comes up. Note: current digest is a *snapshot* of todo state (counts + next queued item), not a true live "agent is doing X now" feed — that needs an actual autonomous loop running first, which doesn't exist yet #phase2 #shell #idea
+- [ ] RAM/VRAM usage forecaster for the context-length slider — show estimated memory impact, not just the raw token count. Motivated by jumping context to 110k spiking GPU to 100% #phase3 #shell #idea
+- [ ] Real Mica/Acrylic transparency still doesn't render despite 3 targeted fixes (apply_mica, transparent html/body, DwmExtendFrameIntoClientArea) with Windows Transparency Effects confirmed on. Next lead: WebView2's own compositor background (`ICoreWebView2Controller2::put_DefaultBackgroundColor`) may be independently opaque, separate from the native window backdrop — not yet tried #phase3 #shell #investigate
+- [ ] Digest view: more visual/graph-modular presentation instead of plain text cards — user feedback after seeing the first working version #phase2 #shell
+- [ ] Graphical turn-flow view: visualize a single turn as an actual flow/graph (prompt → thinking → tool call → thinking → tool call → output) rather than the current flat "Activity log" checklist — user wants this after using the activity log and still wanting to see the shape of a run, not just a list. Distinct from the digest-view idea above (that's loopx project state; this is per-conversation-turn execution flow). No new data needed — `Message.activitySteps` plus `thinking`/`content`/`toolCalls` already captures everything a graph would need, this is purely a different rendering layer #phase3 #shell #idea
+- [ ] Window animation polish: smoother slide easing/duration, consider bottom-center "taskbar-style" popup position instead of bottom-right corner, more compact overall #phase3 #shell
+- [ ] Stretch: point the harness at its own UI code as a second toy task #phase3 #stretch
+- [ ] Image-generation backend (e.g. ComfyUI/SDXL) wired in as a second tool-dispatch target #phase4
+- [ ] SillyTavern / companion presentation mode #phase4
+- [ ] Messaging integrations / additional skills #phase4
+
+
+## Ready
+
+
+
+## In Progress
+
+
+
+## To Test
+
+- [ ] Custom instructions / system prompt (already built, per-conversation) — user hasn't tried it yet
+- [ ] Save as custom model (`/api/create`) — name a model, verify it appears in the picker and actually has the system prompt baked in
+- [ ] Chat titles — send a first message in a new chat, confirm the sidebar title updates automatically; double-click a title to confirm manual rename works
+- [ ] Real filesystem context auto-injected into the system prompt (`get_environment_info` Rust command + `lib/environment.ts`): reports real OS + home/Documents/Desktop/Downloads paths, folded into every turn's system message ahead of the user's own system prompt. Built after a live test showed the model guessing a Linux-style `/home/...` path on Windows and looping through failed writes until hitting the 6-call safety cap. `cargo check` + `tsc --noEmit` clean; not yet exercised live #phase3 #harness #shell
+- [ ] Scrolling during streaming: the auto-scroll effect fired on every single streamed token/thinking-update and force-snapped back to the bottom, making it impossible to scroll up and read earlier messages while a response was still running — user-flagged after noticing it fighting a manual scroll-up mid-"thinking." Fixed with the standard chat-UI pattern: track whether the user is already near the bottom (`shouldAutoScrollRef`, ~60px threshold via an `onScroll` handler on the messages pane); only auto-follow new content if so; always re-enable on sending a new message or switching conversations. `tsc --noEmit` clean, pure frontend change (hot-reloads in the already-running dev instance, no rebuild needed) — not yet manually re-verified #phase3 #shell
+
+
+## Blocked
+
+
+
+## Done
+
+- [x] Scaffold React + Vite + TS Ollama chat UI (`ui/`) #phase0
+- [x] Set up docs/ Obsidian vault, root CLAUDE.md/AGENTS.md #phase0
+- [x] Decide toy task: practice desktop utility app, Tauri/Rust, throwaway #decision #phase1
+- [x] Install WSL2 Ubuntu + loopx (required: loopx needs `fcntl`, Unix-only, no native Windows support) #phase1 #harness #infra
+- [x] Minimal Ollama client (`harness/ollama.py`, stdlib-only) #phase1 #harness
+- [x] loopx wrapper (`harness/loopx_client.py`) + proven end-to-end: real Ollama call → loopx todo complete → refresh-state → quota spend-slot, all from native Windows Python shelling into WSL #phase1 #harness
+- [x] Install Rust (rustup stable-msvc) + confirm MSVC C++ build tools present #phase1 #harness #infra
+- [x] Scaffold Tauri/Rust project skeleton (`toys/kanban-reader/`, vanilla-ts, `cargo check` passes clean) #phase1 #harness
+- [x] Run harness headless via CLI, building the toy utility, loopx tracking objective/todos/evidence #phase1 #harness
+- [x] Parse `docs/Kanban.md` into structured board data, in Rust — `src-tauri/src/kanban.rs`, 2 unit tests + 1 integration test against the real live file (5 lanes, 28 cards) all pass #phase1 #harness
+- [x] Plain proof-of-parse render wired end-to-end (`read_kanban_board` Tauri command → `src/main.ts`), app builds and runs — unstyled by design, real styling is its own card below #phase1 #harness
+- [x] Tauri app skeleton for the *real* shell: added `src-tauri/` to existing `ui/` via `tauri init` (not a new project — `ui/`'s React components are the content pane, no porting needed), `cargo check` clean, full build runs the real chat UI in the webview, confirmed against real Ollama #phase1 #shell
+- [x] Window chrome: frameless window, tray icon (Show/Hide, Pop to Corner, Always on Top toggle, Quit), corner-pop positioning, drag-to-move — including catching and fixing a real bug where dragging silently failed for lack of the `core:window:allow-start-dragging` capability permission #phase1 #shell
+- [x] Collapsible sidebar (titlebar toggle) + wider default window (380x560 → 460x640) so the layout doesn't smoosh in the compact widget window — found via live user testing #phase1 #shell
+- [x] Basic IPC scaffolding: `get_app_info` Tauri command (Rust) → React titlebar, real round-trip confirmed live (not a stub) #phase1 #shell
+- [x] Wire loopx-driven state into the Tauri shell + render live digest (newspaper/blog-style cards): `get_loopx_digest` Tauri command shells directly into WSL (no separate server — pivoted off an initial HTTP-server design per user feedback), `LoopxDigest.tsx` polls it every 8s, toggled via titlebar button. User-confirmed twice against real data #phase2 #harness #shell
+- [x] Skill/tool-dispatch: `ollama.py::chat()` (tools-capable), `skills.py` (registry + `dispatch()` gated behind explicit confirm), first skill `read_file`, model=`qwen3.5:9b` (not the 27B). Proved live both ways: real prompt → model calls the right skill → confirmed → real result used in the final answer; and confirm=False verified to actually block execution #phase2 #harness
+- [x] Chat UI: streamed thinking tokens + collapsible "thought process" breakout per message. Found + fixed a real bug along the way (via user report + live diagnosis, not guessed): a response could hit the context limit while still "thinking" and never produce content, leaving the UI showing "Thinking…" forever with no way to tell it was actually done. Fixed the UI state (only the actively-streaming message shows "Thinking…"; a finished-with-no-content response now shows a clear message) and bumped default context 4096→8192 for new conversations #phase3 #shell
+- [x] Settings: real model info via `/api/show` (param size, quantization, capability badges), context-length slider now tracks the model's actual max instead of a fixed 32768, clamps saved value on model switch. Turned up a bonus finding: `/api/show` shows `tools` in the 27B's capabilities where `/api/tags` didn't — resolves the earlier tracked wrinkle as endpoint inconsistency, not a real gap #phase3 #shell
+- [x] `/api/create` custom model creation: Settings "Save as custom model" (name + system prompt), disabled until both exist, sanitizes the name, `ModelPicker` refreshes automatically after a successful save. Verified `/api/create` is near-instant (no weight copy, just layers a system prompt) via a real create+verify+delete cycle before writing code #phase3 #shell
+- [x] Real Markdown rendering: `react-markdown` (renders to React elements, no `dangerouslySetInnerHTML`/sanitization needed) + `remark-breaks` (single newlines render as line breaks, matching how models actually format vs strict CommonMark). Headers, lists, bold/italic, links, blockquotes, inline vs fenced code all styled. User-confirmed live, including correctly distinguishing fenced code blocks from inline markdown formatting #phase3 #shell
+- [x] Chat titles: auto-generated from the first message (whitespace-collapsed, truncated to 48 chars) when a new chat's title is still the default, double-click any sidebar title to rename manually (inline input, Enter/blur commits, Escape cancels) #phase3 #shell
+- [x] Glass styling — partial. Working, user-confirmed: half-screen default size, slide-in/out animation, corner-pop positioning (including a real bug found+fixed: window ran under the taskbar because `monitor.size()`/`position()` cover the full monitor, not the taskbar-excluded work area — switched to `monitor.work_area()` throughout). Not working despite 3 targeted source-verified fixes: real Mica/Acrylic transparency — moved to Backlog as an open investigation rather than left silently incomplete #phase3 #shell
+- [x] **Live tool-dispatch in the actual chat UI** — the big one: ported skills to Rust (`skills.rs`: `read_file`/`write_file`/`list_directory`/`get_tool_definitions`, single source of truth for the JSON schemas), wired `tools` + streamed `tool_calls` detection into `streamChat`, rebuilt `useChat` as a real agentic loop (bounded to 6 iterations) with wire-format history reconstruction for tool-call/tool-result replay, built a real in-app approval UI (`ToolApprovalPrompt`, inline Approve/Deny — not a terminal prompt), and `MessageBubble` renders tool-call chips + tool-result bubbles. **Proven fully end-to-end by the user on the first real try**: asked the model to write a file, approval prompt showed real args, approved, and the file was actually created in the correct folder. This is the actual "write files with approval, like Claude Code" capability the user asked for #phase3 #harness #shell
+- [x] First real dogfooding test: pointed `qwen3.5:9b` at `docs/MEMORY.md` + `docs/Kanban.md` (real multi-file `read_file` calls, verified against the actual file contents — not hallucinated) and had it write an accurate session summary to a new file, `docs/Session-Summary-2026-08-14.md`. First attempt failed — model read both files correctly but then asked a clarifying question instead of writing, likely because a big document dump (one literally titled "Kanban") triggered a generic "PM assistant" response pattern rather than continuing the task. Retried with a more imperative final instruction ("now call write_file...") and it completed the full read→read→write chain correctly. Real finding: tool dispatch was never the problem — small-model instruction-following on a compound multi-step request was #phase3 #harness
+- [x] Live tool-call activity tracker + `list_directory` live: user-confirmed via screenshot on a second dogfooding turn (model exploring `ui/src-tauri/` itself — `list_directory` on the icons folder and the src-tauri root, `read_file` on `tauri.conf.json`/`package.json`/`Cargo.toml`) — `ActivityTracker.tsx` showed the live per-call checklist (checkmarks on completed calls, pause icon on the in-flight one) exactly as designed, and the polished `ToolApprovalPrompt` showed the summarized-args view with "Show full arguments" collapsed by default. All four skills (`read_file`/`write_file`/`list_directory` + the activity tracker/approval polish) are now proven live, not just compiled clean #phase3 #harness #shell
+- [x] Persistent activity log: user-confirmed live — hit the 6-call safety cap asking for a logo (no image-gen tool; model overthought writing raw SVG in a text tool) and the stopped/final message correctly showed the collapsed "Activity log" breakout with the full step history, instead of the checklist just vanishing like before #phase3 #shell
+
+
+
+
+%% kanban:settings
+```
+{"kanban-plugin":"board","list-collapse":[null,null,null]}
+```
+%%
