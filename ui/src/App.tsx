@@ -4,8 +4,16 @@ import './App.css';
 import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
 import { LoopxDigest } from './components/LoopxDigest';
+import { ThemePicker } from './components/ThemePicker';
 import { useConversations } from './hooks/useConversations';
 import { useChat } from './hooks/useChat';
+import {
+  applyThemePack,
+  BUILTIN_THEMES,
+  getActiveThemeId,
+  loadCustomThemes,
+  setActiveThemeId,
+} from './lib/themes';
 
 const DEFAULT_MODEL = 'llama3.2';
 const BASE_URL_KEY = 'ollama-ui:base-url';
@@ -46,6 +54,27 @@ function App() {
       localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
       return next;
     });
+  }, []);
+
+  // Theme packs: app-level (not per-conversation), persisted like the other
+  // app settings. 'auto' (the default) removes the data-theme attribute so
+  // index.css's prefers-color-scheme query decides; anything else injects
+  // the pack's variables scoped to :root[data-theme="..."]. A saved id that
+  // no longer exists (pack deleted elsewhere) falls back to auto rather
+  // than stranding the app unstyled.
+  const [themeId, setThemeId] = useState(getActiveThemeId);
+
+  useEffect(() => {
+    const pack =
+      BUILTIN_THEMES.find((t) => t.id === themeId) ??
+      loadCustomThemes().find((t) => t.id === themeId) ??
+      { id: 'auto', name: 'Auto', vars: {} };
+    applyThemePack(pack);
+  }, [themeId]);
+
+  const handleThemeSelect = useCallback((id: string) => {
+    setThemeId(id);
+    setActiveThemeId(id);
   }, []);
 
   const [showDigest, setShowDigest] = useState(false);
@@ -112,6 +141,7 @@ function App() {
         >
           ⚙
         </button>
+        <ThemePicker activeId={themeId} onSelect={handleThemeSelect} />
         {appInfo && (
           <span className="titlebar__info">
             v{appInfo.version} · Tauri {appInfo.tauriVersion}

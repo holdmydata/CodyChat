@@ -860,3 +860,197 @@
   font-size: 13px;
   color: var(--danger);
 }
+
+/* Theme picker — titlebar popover (see lib/themes.ts). The menu sits
+   inside the drag-region titlebar, so it must opt out of dragging or
+   clicking a theme would move the window instead. */
+
+.theme-picker {
+  position: relative;
+}
+
+.titlebar__theme-toggle {
+  app-region: no-drag;
+  height: 100%;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.titlebar__theme-toggle:hover {
+  background: var(--bg);
+}
+
+.theme-picker__menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  width: 250px;
+  margin-top: 4px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 10;
+  app-region: no-drag;
+}
+
+.theme-picker__section-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text);
+  opacity: 0.6;
+  padding: 6px 8px 2px;
+}
+
+.theme-picker__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.theme-picker__select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-h);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-picker__select:hover {
+  background: var(--bg);
+}
+
+.theme-picker__select--active {
+  background: var(--accent-bg);
+}
+
+.theme-picker__swatch {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+}
+
+/* Auto isn't a palette — the split swatch says "both, decided for you". */
+.theme-picker__swatch--auto {
+  background: linear-gradient(135deg, #f5f4f7 50%, #1c1d24 50%);
+}
+
+.theme-picker__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-picker__check {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.theme-picker__delete {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  opacity: 0.5;
+  cursor: pointer;
+  font-size: 15px;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+
+.theme-picker__delete:hover {
+  opacity: 1;
+  color: var(--danger);
+}
+
+.theme-picker__divider {
+  height: 1px;
+  background: var(--border);
+  margin: 6px 0;
+}
+
+.theme-picker__action {
+  padding: 6px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-picker__action:hover {
+  background: var(--bg);
+  color: var(--text-h);
+}
+
+.theme-picker__error {
+  font-size: 11px;
+  color: var(--danger);
+  padding: 4px 8px;
+  overflow-wrap: anywhere;
+}
+
+.theme-picker__paste {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 8px 6px;
+}
+
+.theme-picker__paste textarea {
+  font: inherit;
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  resize: vertical;
+}
+
+.theme-picker__paste-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.theme-picker__paste-actions button {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.theme-picker__paste-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

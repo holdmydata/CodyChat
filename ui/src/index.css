@@ -27,8 +27,13 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* System-dark override, for the 'auto' theme only. Theme packs
+   (lib/themes.ts) set data-theme on <html> and inject their own variables
+   scoped to :root[data-theme="..."], so this block is scoped to
+   :root:not([data-theme]) — it must apply when no pack is selected and
+   never fight a selected pack. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --text: #9ca3af;
     --text-h: #f3f4f6;
     --bg: rgba(22, 23, 29, 0.7);
