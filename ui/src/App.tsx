@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import './App.css';
 import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
@@ -10,14 +11,18 @@ import { useConversations } from './hooks/useConversations';
 import { useChat } from './hooks/useChat';
 import { useMcpServers } from './hooks/useMcpServers';
 import {
+  applyFontOverride,
   applyThemePack,
   BUILTIN_THEMES,
   getActiveThemeId,
   loadCustomThemes,
+  loadFontOverride,
+  saveFontOverride,
   setActiveThemeId,
 } from './lib/themes';
 import { getToolDefinitions, type ToolDefinition } from './lib/skills';
 import { loadDisabledTools, saveDisabledTools } from './lib/toolConfig';
+import { DEFAULT_PARAMS } from './types';
 
 const DEFAULT_MODEL = 'llama3.2';
 const BASE_URL_KEY = 'ollama-ui:base-url';
@@ -55,6 +60,39 @@ function App() {
   }, []);
 
   const mcp = useMcpServers();
+
+  // Bumped by Settings → General's "Save as custom model" so ChatWindow's
+  // ModelPicker refreshes its list — lifted here since the save action and
+  // the picker that needs to react to it now live in separate components.
+  const [modelListRefreshKey, setModelListRefreshKey] = useState(0);
+
+  // Widget vs. full-window mode — Rust (lib.rs) owns the real state
+  // (window size/position, and whether focus-loss should auto-hide); this
+  // is just enough for the UI to show the right control ("Expand" vs.
+  // "Collapse") and stay optimistic on click rather than round-tripping a
+  // query. Reset to false whenever the window reopens from the tray,
+  // since that always resets to widget mode on the Rust side regardless
+  // of whatever mode it was in before — the "window-shown-as-widget"
+  // event keeps this in sync with that.
+  const [isExpanded, setIsExpanded] = useState(false);
+  useEffect(() => {
+    const unlisten = listen('window-shown-as-widget', () => setIsExpanded(false));
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const closeToTray = useCallback(() => {
+    invoke('close_to_tray').catch((err) => console.error('close_to_tray failed:', err));
+  }, []);
+
+  const toggleExpanded = useCallback(() => {
+    const next = !isExpanded;
+    setIsExpanded(next);
+    invoke(next ? 'expand_window' : 'collapse_window').catch((err) =>
+      console.error(`${next ? 'expand_window' : 'collapse_window'} failed:`, err)
+    );
+  }, [isExpanded]);
 
   const [disabledTools, setDisabledTools] = useState<Set<string>>(loadDisabledTools);
   const toggleTool = useCallback((name: string) => {
@@ -104,6 +142,25 @@ function App() {
     setActiveThemeId(id);
   }, []);
 
+  // A manual font override always wins over whatever the active pack asks
+  // for — separate from theme packs entirely (survives switching packs)
+  // since "the fonts packs ask for (Google Fonts) aren't installed on this
+  // machine" isn't a per-pack problem. Applied as an inline style on
+  // <html>, which beats any stylesheet rule regardless of specificity, so
+  // it keeps winning even as applyThemePack above swaps the pack's own
+  // injected <style> tag on theme switches.
+  const [fontOverride, setFontOverride] = useState(loadFontOverride);
+
+  useEffect(() => {
+    applyFontOverride(fontOverride);
+  }, [fontOverride]);
+
+  const handleFontOverrideChange = useCallback((font: string) => {
+    const trimmed = font.trim();
+    setFontOverride(trimmed || null);
+    saveFontOverride(trimmed || null);
+  }, []);
+
   type MainView = 'chat' | 'digest' | 'settings';
   const [mainView, setMainView] = useState<MainView>('chat');
   const toggleView = useCallback((view: MainView) => {
@@ -135,6 +192,8 @@ function App() {
     approveToolCall,
     denyToolCall,
     activitySteps,
+    continueTurn,
+    canContinue,
   } = useChat({
     baseUrl,
     conversation: active,
@@ -142,6 +201,23 @@ function App() {
     disabledTools,
     mcpTools: mcp.mcpToolDefs,
   });
+
+  // The Approve/Deny buttons on the real OS toast (notify_pending_approval
+  // in lib.rs) fire this event rather than calling back through invoke() —
+  // there's no "return value" from a notification action, so Rust emits
+  // and the frontend listens, same shape as window-shown-as-widget above.
+  // Routes to the exact same resolver functions the in-app buttons use, so
+  // there's no special-casing between "approved via notification" and
+  // "approved via the widget" — both just resolve whatever's pending.
+  useEffect(() => {
+    const unlisten = listen<string>('tool-approval-action', (event) => {
+      if (event.payload === 'approve') approveToolCall();
+      else if (event.payload === 'deny') denyToolCall();
+    });
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  }, [approveToolCall, denyToolCall]);
 
   const handleSend = useCallback(
     (content: string) => {
@@ -184,11 +260,30 @@ function App() {
         >
           ⚙
         </button>
+        {/* TODO: Add roaming duck on the titlebar, no need to have Tauri version but can keep appInfo version */}
         {appInfo && (
           <span className="titlebar__info">
-            v{appInfo.version} · Tauri {appInfo.tauriVersion}
+            CodyChat - v{appInfo.version} · Tauri {appInfo.tauriVersion}
           </span>
         )}
+        <button
+          type="button"
+          className="titlebar__expand-toggle"
+          onClick={toggleExpanded}
+          aria-label={isExpanded ? 'Collapse to widget' : 'Expand to full window'}
+          title={isExpanded ? 'Collapse to widget' : 'Expand to full window'}
+        >
+          {isExpanded ? '⤡' : '⤢'}
+        </button>
+        <button
+          type="button"
+          className="titlebar__close"
+          onClick={closeToTray}
+          aria-label="Close to tray"
+          title="Close to tray"
+        >
+          ✕
+        </button>
       </div>
       <div className="app">
         {mainView === 'digest' ? (
@@ -210,6 +305,14 @@ function App() {
             onRemoveMcpServer={mcp.removeServer}
             onConnectMcpServer={mcp.connect}
             onDisconnectMcpServer={mcp.disconnect}
+            activeModel={active?.model ?? ''}
+            systemPrompt={active?.systemPrompt ?? ''}
+            onSystemPromptChange={(systemPrompt) => active && updateConversation(active.id, { systemPrompt })}
+            params={active?.params ?? DEFAULT_PARAMS}
+            onParamsChange={(params) => active && updateConversation(active.id, { params })}
+            onModelCreated={() => setModelListRefreshKey((k) => k + 1)}
+            fontOverride={fontOverride ?? ''}
+            onFontOverrideChange={handleFontOverrideChange}
           />
         ) : (
           <>
@@ -228,8 +331,6 @@ function App() {
                 conversation={active}
                 baseUrl={baseUrl}
                 onModelChange={(model) => updateConversation(active.id, { model })}
-                onSystemPromptChange={(systemPrompt) => updateConversation(active.id, { systemPrompt })}
-                onParamsChange={(params) => updateConversation(active.id, { params })}
                 isStreaming={isStreaming}
                 error={error}
                 onSend={handleSend}
@@ -238,6 +339,10 @@ function App() {
                 onApproveToolCall={approveToolCall}
                 onDenyToolCall={denyToolCall}
                 activitySteps={activitySteps}
+                canContinue={canContinue}
+                onContinue={continueTurn}
+                compact={!isExpanded}
+                modelListRefreshKey={modelListRefreshKey}
               />
             ) : (
               <div className="app__empty">

@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { ThemePickerMenu } from './ThemePicker';
+import { normalizeFontValue } from '../lib/themes';
 import { McpServers } from './McpServers';
+import { SettingsPanel } from './SettingsPanel';
 import { RISK_LABEL, riskOf } from '../lib/toolConfig';
 import type { ToolDefinition } from '../lib/skills';
 import type { McpServerConfig } from '../lib/mcp';
 import type { McpServerStatus } from '../hooks/useMcpServers';
+import type { ChatParams } from '../types';
 
 interface SettingsMenuProps {
   baseUrl: string;
@@ -22,6 +25,16 @@ interface SettingsMenuProps {
   onRemoveMcpServer: (id: string) => void;
   onConnectMcpServer: (id: string) => void;
   onDisconnectMcpServer: (id: string) => void;
+  /** The active conversation's model/system-prompt/params — moved here from a per-conversation toggle in the chat header so persona/modelfile editing has one clear home. */
+  activeModel: string;
+  systemPrompt: string;
+  onSystemPromptChange: (prompt: string) => void;
+  params: ChatParams;
+  onParamsChange: (params: ChatParams) => void;
+  onModelCreated: () => void;
+  /** Manual font override — wins over whatever the active pack requests, since packs' fonts (Google Fonts names) aren't bundled and only render if installed locally. Empty string means no override. */
+  fontOverride: string;
+  onFontOverrideChange: (font: string) => void;
 }
 
 type Tab = 'theme' | 'general' | 'tools';
@@ -33,9 +46,14 @@ const TABS: { id: Tab; label: string }[] = [
 ];
 
 // App-level settings home: titlebar ⚙ opens this in place of the chat pane
-// (same pattern as the ⚙/📋 tasks-digest toggle). Distinct from the
-// per-conversation SettingsPanel (model/system-prompt/params), which stays
-// inline in ChatWindow since those genuinely vary per conversation.
+// (same pattern as the ⚙/📋 tasks-digest toggle). General also embeds the
+// per-conversation SettingsPanel (model info, system prompt, sampling
+// params, save-as-custom-model) — moved here from a toggle in the chat
+// header so persona/modelfile editing (system prompt + save-as-model) has
+// one clear home instead of being buried in a collapsible panel. The
+// values themselves are still genuinely per-conversation (operate on
+// whichever conversation is currently active); only the editing UI's
+// location changed.
 export function SettingsMenu({
   baseUrl,
   onBaseUrlChange,
@@ -52,6 +70,14 @@ export function SettingsMenu({
   onRemoveMcpServer,
   onConnectMcpServer,
   onDisconnectMcpServer,
+  activeModel,
+  systemPrompt,
+  onSystemPromptChange,
+  params,
+  onParamsChange,
+  onModelCreated,
+  fontOverride,
+  onFontOverrideChange,
 }: SettingsMenuProps) {
   const [tab, setTab] = useState<Tab>('theme');
 
@@ -77,6 +103,36 @@ export function SettingsMenu({
           <section className="settings-menu__section">
             <h3 className="settings-menu__heading">Theme</h3>
             <ThemePickerMenu activeId={themeId} onSelect={onThemeSelect} embedded />
+
+            <h4 className="settings-menu__subheading">Font</h4>
+            <p className="settings-menu__hint">
+              Theme packs can request a font (Google Fonts names like "Quicksand" or "M PLUS Rounded 1c"), but
+              nothing is bundled with the app — a requested font only renders if it's actually installed on this
+              machine, otherwise it silently falls back. Type a font-family value below to override whatever the
+              active pack asks for; the preview uses it directly so you can see immediately whether it's really
+              available here.
+            </p>
+            <label className="settings-panel__field">
+              <span>Font override</span>
+              <input
+                type="text"
+                value={fontOverride}
+                onChange={(e) => onFontOverrideChange(e.target.value)}
+                placeholder="'Quicksand', system-ui, sans-serif"
+              />
+            </label>
+            <p
+              className="settings-menu__font-preview"
+              style={fontOverride ? { fontFamily: normalizeFontValue(fontOverride) } : undefined}
+            >
+              The quick brown fox jumps over the lazy duck — Aa Bb Cc 123
+            </p>
+            {fontOverride && (
+              <button type="button" className="settings-menu__font-reset" onClick={() => onFontOverrideChange('')}>
+                Reset to theme default
+              </button>
+            )}
+
             <div className="settings-menu__placeholder">
               <strong>Pack builder</strong> — a form to design your own theme pack (color pickers, name/author
               fields, export to file) is planned but not built yet. For now, import a pack via pasted JSON or a
@@ -97,6 +153,18 @@ export function SettingsMenu({
                 placeholder="http://localhost:11434"
               />
             </label>
+
+            <h4 className="settings-menu__subheading">Active conversation</h4>
+            <SettingsPanel
+              baseUrl={baseUrl}
+              model={activeModel}
+              systemPrompt={systemPrompt}
+              onSystemPromptChange={onSystemPromptChange}
+              params={params}
+              onParamsChange={onParamsChange}
+              onModelCreated={onModelCreated}
+            />
+
             {appVersion && (
               <p className="settings-menu__about">
                 CodyShell v{appVersion}

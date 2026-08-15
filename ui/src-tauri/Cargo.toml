@@ -23,9 +23,18 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.3", features = ["tray-icon"] }
 tauri-plugin-log = "2"
+tauri-plugin-notification = "2"
 window-vibrancy = "0.6"
 raw-window-handle = "0.6"
 regex = "1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_Controls", "Win32_UI_WindowsAndMessaging"] }
+# Direct dependency (not just via tauri-plugin-notification) — that plugin's
+# action-button support is mobile-only; its desktop show() path never reads
+# action_type_id at all (confirmed by reading its 2.3.3 source directly).
+# notify-rust's own Windows backend genuinely wires .action() to real toast
+# buttons via winrt-notification, which is what tool-approval notifications
+# need — the plugin is still used for the plain "response ready" case,
+# which never needed actions in the first place.
+notify-rust = "4"

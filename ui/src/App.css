@@ -10,8 +10,10 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  background: var(--bg-alt);
-  border-bottom: 1px solid var(--border);
+  background: var(--titlebar-bg);
+  /* 2px accent (not the neutral --border) — a small thing that reads as a
+     lot more "branded app" than "generic desktop utility". */
+  border-bottom: 2px solid var(--accent-border);
 }
 
 .titlebar__sidebar-toggle {
@@ -26,7 +28,7 @@
 }
 
 .titlebar__sidebar-toggle:hover {
-  background: var(--bg);
+  background: var(--hover-bg);
 }
 
 .titlebar__digest-toggle {
@@ -41,7 +43,7 @@
 }
 
 .titlebar__digest-toggle:hover {
-  background: var(--bg);
+  background: var(--hover-bg);
 }
 
 .titlebar__settings-toggle {
@@ -56,7 +58,7 @@
 }
 
 .titlebar__settings-toggle:hover {
-  background: var(--bg);
+  background: var(--hover-bg);
 }
 
 .titlebar__info {
@@ -66,6 +68,41 @@
   margin-left: auto;
   margin-right: 10px;
   white-space: nowrap;
+}
+
+.titlebar__expand-toggle {
+  app-region: no-drag;
+  height: 100%;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.titlebar__expand-toggle:hover {
+  background: var(--hover-bg);
+  color: var(--accent);
+}
+
+/* Closes to the tray, not a real quit — see lib.rs's close_to_tray.
+   Danger-tinted on hover, matching the conventional "this is the close
+   button" affordance every OS titlebar uses. */
+.titlebar__close {
+  app-region: no-drag;
+  height: 100%;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.titlebar__close:hover {
+  background: var(--danger);
+  color: var(--bg);
 }
 
 .app {
@@ -89,8 +126,10 @@
 .sidebar {
   width: 240px;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  background: var(--bg-alt);
+  /* 2px accent border, slightly separated feel — reads more like a game
+     menu panel than a flat pane butted against the chat. */
+  border-right: 2px solid var(--accent-border);
+  background: var(--sidebar-bg);
   display: flex;
   flex-direction: column;
   padding: 12px;
@@ -99,7 +138,7 @@
 
 .sidebar__new {
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--accent-border);
   background: var(--accent-bg);
   color: var(--text-h);
@@ -126,18 +165,23 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: 9px 11px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
   cursor: pointer;
   color: var(--text);
 }
 
 .sidebar__item:hover {
-  background: var(--bg);
+  background: var(--hover-bg);
 }
 
 .sidebar__item--active {
-  background: var(--accent-bg);
+  /* A real card — filled + a visible accent border, not just a background
+     tint — matching the "selected item gets pale fill + outline" brief
+     rather than the previous fill-only look. */
+  background: var(--selected-bg);
+  border-color: var(--accent-border);
   color: var(--text-h);
 }
 
@@ -209,6 +253,15 @@
 
 .model-picker--error {
   color: var(--danger);
+}
+
+/* The saved model wasn't in the last fetched list — surfaced rather than
+   silently swapped out (see ModelPicker.tsx). Warning-tinted, not
+   danger-tinted: the conversation isn't broken, it just needs a model
+   picked explicitly. */
+.model-picker--missing {
+  border-color: var(--warning, var(--danger));
+  color: var(--warning, var(--danger));
 }
 
 .chat-window__settings-toggle {
@@ -403,13 +456,28 @@
   font-size: 11px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
+  /* Was unset — inherited the generic body text color regardless of which
+     bubble it sat on, same class of bug as .message__content before the
+     --user-bubble-text/--assistant-bubble-text split, just missed on the
+     first pass. Genuinely hard to read against a light user bubble on an
+     otherwise dark theme (screenshot-confirmed), not just a theoretical
+     gap. */
+  color: var(--assistant-bubble-text);
   opacity: 0.5;
   margin-bottom: 4px;
 }
 
+.message--user .message__role {
+  color: var(--user-bubble-text);
+}
+
 .message__content {
-  color: var(--text-h);
+  color: var(--assistant-bubble-text);
   line-height: 150%;
+}
+
+.message--user .message__content {
+  color: var(--user-bubble-text);
 }
 
 .message__content > :first-child {
@@ -864,20 +932,51 @@
 
 /* Input */
 
+/* Shown when a turn paused at the tool-call iteration cap (useChat.ts's
+   pausedMessages) — same band treatment as .tool-approval, so resuming a
+   turn reads as the same kind of "the app is waiting on you" moment. */
+.chat-window__continue {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border-top: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.chat-window__continue button {
+  padding: 6px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  flex-shrink: 0;
+}
+
+.chat-window__continue button:hover {
+  filter: brightness(1.08);
+}
+
 .message-input {
   display: flex;
   gap: 8px;
   padding: 12px 16px;
-  border-top: 1px solid var(--border);
+  border-top: 2px solid var(--accent-border);
 }
 
 .message-input textarea {
   flex: 1;
   font: inherit;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
-  background: var(--bg);
+  background: var(--input-bg);
   color: var(--text-h);
   resize: none;
 }
@@ -886,16 +985,26 @@
 .message-input__stop {
   align-self: flex-end;
   padding: 10px 18px;
-  border-radius: 8px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--accent-border);
-  background: var(--accent-bg);
-  color: var(--text-h);
   cursor: pointer;
   font: inherit;
 }
 
+/* Solid-filled, not the pale accent-bg outline every other secondary
+   button uses — Send is the primary action in the whole window and
+   should read that way, not like a disabled-looking outline. */
+.message-input__send {
+  background: var(--accent);
+  color: var(--bg);
+}
+
 .message-input__send:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  filter: brightness(1.08);
+}
+
+.message-input__stop {
+  color: var(--text-h);
 }
 
 .message-input__send:disabled {
@@ -1230,7 +1339,11 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 480px;
+  /* Was a fixed 480px, which made sense when Settings only ever showed in
+     the narrow widget — in the wider full-experience window it left most
+     of the pane as dead space. min() keeps it from overflowing a narrow
+     widget while giving it real room to breathe once there's room to. */
+  max-width: min(720px, 100%);
 }
 
 .settings-menu__heading {
@@ -1250,6 +1363,36 @@
   margin: 8px 0 0;
   font-size: 11px;
   opacity: 0.5;
+}
+
+/* Font override preview (Settings → Theme) — rendered directly in
+   whatever's typed into the override field, not the app's own --sans, so
+   it's an honest test of whether that font is actually available on this
+   machine rather than always showing the same fallback either way. */
+.settings-menu__font-preview {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  font-size: 16px;
+  color: var(--text-h);
+}
+
+.settings-menu__font-reset {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.settings-menu__font-reset:hover {
+  border-color: var(--accent-border);
+  color: var(--text-h);
 }
 
 .settings-menu__placeholder {

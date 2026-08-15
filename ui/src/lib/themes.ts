@@ -19,6 +19,18 @@ export interface ThemePack {
   /** Applied as CSS color-scheme so scrollbars/controls match. Omit for "either". */
   scheme?: 'light' | 'dark';
   /**
+   * Overrides --sans (the app's UI font stack) for this pack. The one
+   * non-color value a pack is allowed to set — deliberately not part of
+   * `vars` below, since it isn't a color and needs its own validation.
+   * These are Google Fonts names, not bundled with the app (this stays
+   * offline-first rather than fetching webfonts over the network for a
+   * cosmetic feature) — they only render if actually installed locally,
+   * otherwise the rest of the stack's fallbacks apply. Should be a full
+   * font-family value including fallbacks, e.g.
+   * `"'Quicksand', system-ui, sans-serif"`.
+   */
+  font?: string;
+  /**
    * The colors. Keys are the CSS variable names without the leading `--`.
    * Packs provide the base palette (text, bg, border, accent, ...); extra
    * keys are applied as-is, so a pack can introduce a variable a future
@@ -48,43 +60,87 @@ export const BUILTIN_THEMES: ThemePack[] = [
   {
     id: 'light',
     name: 'Light',
-    description: 'The original frosted-light look, forced.',
+    description: "CodyChat's default light look.",
     scheme: 'light',
+    font: "'M PLUS Rounded 1c', 'Quicksand', 'Nunito Sans', system-ui, sans-serif",
     vars: {
-      text: '#6b6375',
-      'text-h': '#08060d',
-      bg: 'rgba(255, 255, 255, 0.72)',
-      'bg-alt': 'rgba(247, 246, 249, 0.82)',
-      border: 'rgba(229, 228, 231, 0.7)',
-      'code-bg': 'rgba(244, 243, 236, 0.85)',
-      accent: '#aa3bff',
-      'accent-bg': 'rgba(170, 59, 255, 0.12)',
-      'accent-border': 'rgba(170, 59, 255, 0.5)',
-      danger: '#d1435b',
-      'user-bubble': 'rgba(240, 234, 255, 0.85)',
-      'assistant-bubble': 'rgba(247, 246, 249, 0.85)',
-      'root-bg': '#f7f6f9',
+      text: '#50627A',
+      'text-h': '#0B2A5B',
+      'root-bg': '#F5F8FC',
+      bg: '#FFFFFF',
+      'bg-alt': '#FFF8E6',
+      border: '#DCE5F0',
+      'border-strong': '#B7C7DB',
+      accent: '#2F8CFF',
+      'accent-bg': 'rgba(47, 140, 255, 0.12)',
+      'accent-border': 'rgba(47, 140, 255, 0.45)',
+      danger: '#E35D6A',
+      success: '#43A778',
+      warning: '#F59E0B',
+      'user-bubble': '#FFF1B8',
+      'assistant-bubble': '#F2F7FF',
+      'code-bg': '#EFF4FA',
+      'titlebar-bg': '#FFFFFF',
+      'sidebar-bg': '#F7FAFE',
+      'input-bg': '#FFFFFF',
+      'hover-bg': '#EDF5FF',
+      'selected-bg': '#DDEEFF',
+      'focus-ring': '#60A5FA',
+      yellow: '#FFD54A',
+      orange: '#FF9F1C',
+      navy: '#0B2A5B',
+      blue: '#2F8CFF',
+      cream: '#FFF3D6',
     },
   },
   {
     id: 'dark',
     name: 'Dark',
-    description: 'The original dark look, forced.',
+    description: "CodyChat's default dark look — same duck, after dark.",
     scheme: 'dark',
+    // A real dark *companion* to Light, not just "some dark palette" —
+    // same accent hue (blue, brightened for dark-bg contrast), same
+    // brand constants, same semantic tokens. Yellow stays reserved for
+    // mascot/highlight moments rather than becoming the primary accent,
+    // matching the original design brief this pack is built from.
+    //
+    // user-bubble is deliberately a near-white fill (not the warm-gold
+    // glow this started as) so it reads clearly apart from the dark
+    // assistant-bubble — which is exactly why user-bubble-text needs its
+    // own dark value here rather than the shared --text-h: text-h is a
+    // pale near-white tuned for reading on *dark* surfaces, and would go
+    // nearly illegible against this now-light one. See index.css for the
+    // --user-bubble-text/--assistant-bubble-text split this motivated.
+    font: "'M PLUS Rounded 1c', 'Quicksand', 'Nunito Sans', system-ui, sans-serif",
     vars: {
-      text: '#9ca3af',
-      'text-h': '#f3f4f6',
-      bg: 'rgba(22, 23, 29, 0.7)',
-      'bg-alt': 'rgba(28, 29, 36, 0.8)',
-      border: 'rgba(46, 48, 58, 0.75)',
-      'code-bg': 'rgba(31, 32, 40, 0.85)',
-      accent: '#c084fc',
-      'accent-bg': 'rgba(192, 132, 252, 0.18)',
-      'accent-border': 'rgba(192, 132, 252, 0.5)',
-      danger: '#f0708a',
-      'user-bubble': 'rgba(42, 35, 64, 0.85)',
-      'assistant-bubble': 'rgba(28, 29, 36, 0.85)',
-      'root-bg': '#1c1d24',
+      text: '#8FA3C4',
+      'text-h': '#EAF2FF',
+      'root-bg': '#0B1830',
+      bg: '#122544',
+      'bg-alt': '#182A4E',
+      border: 'rgba(96, 165, 250, 0.25)',
+      'border-strong': 'rgba(96, 165, 250, 0.4)',
+      accent: '#5AA9FF',
+      'accent-bg': 'rgba(90, 169, 255, 0.16)',
+      'accent-border': 'rgba(90, 169, 255, 0.5)',
+      danger: '#FF7A87',
+      success: '#5BC79A',
+      warning: '#FFC24D',
+      'user-bubble': 'rgba(254, 254, 249, 0.86)',
+      'user-bubble-text': '#0a3272',
+      'assistant-bubble': '#16294B',
+      'code-bg': '#0E1E3A',
+      'titlebar-bg': '#0E1E3A',
+      'sidebar-bg': '#132542',
+      'input-bg': '#142744',
+      'hover-bg': '#1A2E56',
+      'selected-bg': 'rgba(90, 169, 255, 0.22)',
+      'focus-ring': '#5AA9FF',
+      yellow: '#FFD54A',
+      orange: '#FF9F1C',
+      navy: '#0B2A5B',
+      blue: '#2F8CFF',
+      cream: '#FFF3D6',
     },
   },
   {
@@ -93,6 +149,9 @@ export const BUILTIN_THEMES: ThemePack[] = [
     author: 'MeanSquares',
     description: "Confused about its own colors. Do not ask.",
     scheme: 'light',
+    // Extra-mascot-y and a little unhinged, matching the joke framing —
+    // the chaotic counterpart to Cody Duck's polished version below.
+    font: "'Fredoka', 'Quicksand', system-ui, sans-serif",
     // Panel fills bumped to near-opaque (was ~0.78-0.85, matching the
     // "translucent so packs pick up Mica" plan). Real Mica/Acrylic still
     // doesn't render (see Kanban backlog) — the window falls back to a
@@ -123,25 +182,44 @@ export const BUILTIN_THEMES: ThemePack[] = [
   },
   {
     id: 'hextech',
-    name: 'League of Legends',
+    name: 'League Hextech',
     author: 'MeanSquares',
-    description: 'Muted teal accent on dark-navy client blue with maroon and gold trim.',
+    description: 'Hextech gold on the dark-navy League of Legends client blue.',
     scheme: 'dark',
+    // Rebuilt from the actual LoL client palette (deep navy #0A1428 +
+    // Hextech gold #C8AA6E, with the signature teal #0AC8B9 as a
+    // secondary highlight) — the previous version used an off-brand
+    // purple/orange combo that wasn't really Hextech at all. Also
+    // explicitly sets every semantic surface token (sidebar-bg,
+    // titlebar-bg, hover-bg, selected-bg, focus-ring) instead of relying
+    // on the generic bg-alt/accent-bg fallback chain — the sidebar in
+    // particular gets its own distinct navy shade so it reads as a
+    // separated panel rather than blending into the main pane, matching
+    // the "sidebar as a game menu panel" chrome direction from the Cody
+    // Duck pass.
     vars: {
       text: '#A09B8C',
       'text-h': '#F0E6D2',
-      bg: 'rgba(10, 20, 40, 0.85)',
-      'bg-alt': 'rgba(9, 18, 36, 0.9)',
-      border: 'rgba(200, 170, 110, 0.4)',
-      'border-gold': 'rgba(200, 170, 110, 0.65)',
-      'code-bg': 'rgba(6, 14, 28, 0.92)',
-      accent: '#5AC8D8',
-      'accent-bg': 'rgba(90, 200, 216, 0.18)',
-      'accent-border': 'rgba(90, 200, 216, 0.55)',
-      danger: '#FF4D6D',
-      'user-bubble': 'rgba(95, 67, 33, 0.9)',
-      'assistant-bubble': 'rgba(8, 35, 40, 0.85)',
       'root-bg': '#0A1428',
+      bg: '#0A1428',
+      'bg-alt': '#091428',
+      border: 'rgba(200, 170, 110, 0.35)',
+      'border-strong': 'rgba(200, 170, 110, 0.55)',
+      'code-bg': '#060E1C',
+      accent: '#C8AA6E',
+      'accent-bg': 'rgba(200, 170, 110, 0.16)',
+      'accent-border': 'rgba(200, 170, 110, 0.5)',
+      danger: '#E84057',
+      success: '#0AC8B9',
+      warning: '#F0B232',
+      'user-bubble': 'rgba(200, 170, 110, 0.22)',
+      'assistant-bubble': '#0F2440',
+      'titlebar-bg': '#091428',
+      'sidebar-bg': '#0A1F3D',
+      'input-bg': '#0A1F3D',
+      'hover-bg': '#132A4D',
+      'selected-bg': 'rgba(200, 170, 110, 0.22)',
+      'focus-ring': '#C8AA6E',
     },
   },
 ];
@@ -156,6 +234,12 @@ const ID_RE = /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/;
 const VAR_NAME_RE = /^[a-zA-Z][a-zA-Z0-9-]*$/;
 const COLOR_RE =
   /^(#[0-9a-fA-F]{3,8}|rgba?\(\s*[\d.,\s%]+\)|hsla?\(\s*[\d.,\s%]+\)|transparent)$/;
+// A font-family value: quoted/unquoted names, commas, spaces, hyphens.
+// Same untrusted-input posture as COLOR_RE — this gets injected into a
+// <style> block, so anything with { } ; < > or backslashes is rejected
+// outright rather than sanitized, and length is capped against a pack
+// that tries to smuggle something absurd in.
+const FONT_RE = /^[a-zA-Z0-9 ,'"()-]{1,200}$/;
 
 export function sanitizeThemePack(
   raw: unknown,
@@ -190,6 +274,7 @@ export function sanitizeThemePack(
   if (typeof obj.description === 'string' && obj.description.trim())
     pack.description = obj.description.trim();
   if (obj.scheme === 'light' || obj.scheme === 'dark') pack.scheme = obj.scheme;
+  if (typeof obj.font === 'string' && FONT_RE.test(obj.font.trim())) pack.font = obj.font.trim();
   return { pack, error: null };
 }
 
@@ -220,6 +305,46 @@ export function getActiveThemeId(): string {
 
 export function setActiveThemeId(id: string): void {
   localStorage.setItem(ACTIVE_THEME_KEY, id);
+}
+
+const FONT_OVERRIDE_KEY = 'ollama-ui:font-override';
+
+// A user-set font always wins over whatever the active pack specifies —
+// separate from theme packs entirely (survives switching packs) since the
+// actual problem this solves is "the fonts packs ask for aren't installed
+// on this machine," which isn't a per-pack concern. Applied as an inline
+// style on <html> in applyFontOverride below, which beats any stylesheet
+// rule (including a pack's injected :root[data-theme] one) regardless of
+// specificity math, guaranteeing it always wins without needing to touch
+// the theme-pack injection logic at all.
+// Tolerates a trailing ';' since that's a completely natural thing to type
+// after a CSS font-family value (copy-pasted from a stylesheet, muscle
+// memory) — without this, FONT_RE rejects it outright and the override
+// silently no-ops with zero feedback to the user.
+export function normalizeFontValue(font: string): string {
+  return font.trim().replace(/;+\s*$/, '');
+}
+
+export function loadFontOverride(): string | null {
+  return localStorage.getItem(FONT_OVERRIDE_KEY);
+}
+
+export function saveFontOverride(font: string | null): void {
+  const normalized = font ? normalizeFontValue(font) : '';
+  if (normalized) {
+    localStorage.setItem(FONT_OVERRIDE_KEY, normalized);
+  } else {
+    localStorage.removeItem(FONT_OVERRIDE_KEY);
+  }
+}
+
+export function applyFontOverride(font: string | null): void {
+  const normalized = font ? normalizeFontValue(font) : '';
+  if (normalized && FONT_RE.test(normalized)) {
+    document.documentElement.style.setProperty('--sans', normalized);
+  } else {
+    document.documentElement.style.removeProperty('--sans');
+  }
 }
 
 /**
@@ -254,7 +379,8 @@ export function applyThemePack(pack: ThemePack): void {
     .map(([name, value]) => `  --${name}: ${value};`)
     .join('\n');
   const scheme = pack.scheme ? `\n  color-scheme: ${pack.scheme};` : '';
-  getThemeStyleElement().textContent = `:root[data-theme="${pack.id}"] {\n${decls}${scheme}\n}`;
+  const font = pack.font ? `\n  --sans: ${pack.font};` : '';
+  getThemeStyleElement().textContent = `:root[data-theme="${pack.id}"] {\n${decls}${scheme}${font}\n}`;
 }
 
 /**

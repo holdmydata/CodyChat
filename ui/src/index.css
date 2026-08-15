@@ -1,27 +1,74 @@
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  /* Translucent — real glass transparency comes from window-vibrancy
-     (Mica/Acrylic) applied to the native window in src-tauri/src/lib.rs.
-     These alpha values are what lets that backdrop blur show through. */
-  --bg: rgba(255, 255, 255, 0.72);
-  --bg-alt: rgba(247, 246, 249, 0.82);
-  --border: rgba(229, 228, 231, 0.7);
-  --code-bg: rgba(244, 243, 236, 0.85);
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.12);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --danger: #d1435b;
-  --user-bubble: rgba(240, 234, 255, 0.85);
-  --assistant-bubble: rgba(247, 246, 249, 0.85);
-  /* Solid (alpha 1) — used only as the html/body/#root floor below, never
-     by a panel. Every panel color above stays translucent on purpose (see
-     that comment) for whenever Mica actually renders; this is the color
-     that shows through them *today*, while it doesn't. */
-  --root-bg: #f7f6f9;
+  /* Mirrors the 'light' pack in lib/themes.ts exactly — Auto (the default,
+     no pack selected) and the explicit Light pack should look identical
+     when the OS is in light mode. If you restyle one, restyle the other.
+     Opaque, not translucent — Mica/Acrylic still doesn't render (see the
+     investigation in docs/Kanban.md), so translucent values here would
+     just be showing raw window background through them, same reasoning
+     as the earlier --root-bg fix. */
+  --text: #50627a;
+  --text-h: #0b2a5b;
+  --bg: #ffffff;
+  --bg-alt: #fff8e6;
+  --border: #dce5f0;
+  --border-strong: #b7c7db;
+  --code-bg: #eff4fa;
+  --accent: #2f8cff;
+  --accent-bg: rgba(47, 140, 255, 0.12);
+  --accent-border: rgba(47, 140, 255, 0.45);
+  --danger: #e35d6a;
+  --success: #43a778;
+  --warning: #f59e0b;
+  --user-bubble: #fff1b8;
+  --assistant-bubble: #f2f7fa;
+  --root-bg: #f5f8fc;
+  --yellow: #ffd54a;
+  --orange: #ff9f1c;
+  --navy: #0b2a5b;
+  --blue: #2f8cff;
+  --cream: #fff3d6;
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
+  /* Component-level surfaces — matching the pack's explicit choices where
+     it diverges from a plain foundation fallback (e.g. sidebar is a cool
+     pale blue, not the warm-cream --bg-alt used elsewhere), a live var()
+     chain otherwise so a future pack only needs to set what it wants to
+     change. */
+  --sidebar-bg: #f7fafe;
+  --titlebar-bg: var(--bg);
+  --input-bg: var(--bg);
+  --hover-bg: #edf5ff;
+  --selected-bg: #ddeeff;
+  --focus-ring: #60a5fa;
+  /* Message text was one shared color (--text-h) for both bubbles, which
+     silently assumed --user-bubble and --assistant-bubble would always be
+     close enough in lightness for that to work. Splitting it lets a pack
+     pick genuinely different bubble colors (e.g. a light user bubble on an
+     otherwise dark theme) without the text on one of them going illegible
+     — each defaults to --text-h via the same live-chain pattern as every
+     other semantic token here, so nothing needs this unless it actually
+     wants to diverge. */
+  --user-bubble-text: var(--text-h);
+  --assistant-bubble-text: var(--text-h);
+
+  /* Leads with rounder, friendlier display fonts (Google Fonts — not
+     bundled, so they only render if actually installed locally; this app
+     stays offline-first rather than fetching webfonts over the network
+     for a cosmetic feature) before falling back to the OS default, same
+     graceful-degradation pattern as any font stack. Packs can override
+     this per-theme via the `font` field (see ThemePack in lib/themes.ts)
+     — it's the one non-color value a pack is allowed to set, validated
+     separately from the color vars in `vars`. */
+  --sans: 'Quicksand', 'M PLUS Rounded 1c', 'Nunito Sans', system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
+
+  /* Baked into the app, not into theme packs — see docs/Kanban.md's theme
+     backlog entry for why: an imported pack shouldn't be able to make
+     every control 3px tall or perfectly square. Themes only ever recolor
+     this fixed shape identity. */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-pill: 999px;
 
   font: 15px/145% var(--sans);
   color-scheme: light dark;
@@ -32,26 +79,36 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* System-dark override, for the 'auto' theme only. Theme packs
-   (lib/themes.ts) set data-theme on <html> and inject their own variables
-   scoped to :root[data-theme="..."], so this block is scoped to
-   :root:not([data-theme]) — it must apply when no pack is selected and
-   never fight a selected pack. */
+/* System-dark override, for the 'auto' theme only — mirrors the 'dark'
+   pack in lib/themes.ts exactly, same reasoning as the light block above.
+   Theme packs (lib/themes.ts) set data-theme on <html> and inject their
+   own variables scoped to :root[data-theme="..."], so this block is
+   scoped to :root:not([data-theme]) — it must apply when no pack is
+   selected and never fight a selected pack. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme]) {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: rgba(22, 23, 29, 0.7);
-    --bg-alt: rgba(28, 29, 36, 0.8);
-    --border: rgba(46, 48, 58, 0.75);
-    --code-bg: rgba(31, 32, 40, 0.85);
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.18);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --danger: #f0708a;
-    --user-bubble: rgba(42, 35, 64, 0.85);
-    --assistant-bubble: rgba(28, 29, 36, 0.85);
-    --root-bg: #1c1d24;
+    --text: #8fa3c4;
+    --text-h: #eaf2ff;
+    --bg: #122544;
+    --bg-alt: #182a4e;
+    --border: rgba(96, 165, 250, 0.25);
+    --border-strong: rgba(96, 165, 250, 0.4);
+    --code-bg: #0e1e3a;
+    --accent: #5aa9ff;
+    --accent-bg: rgba(90, 169, 255, 0.16);
+    --accent-border: rgba(90, 169, 255, 0.5);
+    --danger: #ff7a87;
+    --success: #5bc79a;
+    --warning: #ffc24d;
+    --user-bubble: rgba(255, 213, 74, 0.18);
+    --assistant-bubble: #16294b;
+    --root-bg: #0b1830;
+    --sidebar-bg: #132542;
+    --titlebar-bg: #0e1e3a;
+    --input-bg: #142744;
+    --hover-bg: #1a2e56;
+    --selected-bg: rgba(90, 169, 255, 0.22);
+    --focus-ring: #5aa9ff;
   }
 }
 
@@ -100,19 +157,22 @@ pre {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 999px;
+  /* Tinted toward the theme's accent rather than a flat neutral border —
+     a small thing, but "the scrollbar matches the brand" reads as a lot
+     more intentional/game-UI than a generic gray bar. */
+  background: color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: var(--radius-pill);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text);
+  background: var(--accent);
 }
 
 /* One keyboard-focus ring for every interactive element — most controls
    across the app had no focus style at all beyond the invisible browser
    default, easy to miss against a custom-chrome frameless window. */
 :focus-visible {
-  outline: 2px solid var(--accent-border);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -145,7 +205,7 @@ input[type='search']:focus,
 textarea:focus,
 select:focus {
   outline: none;
-  border-color: var(--accent-border);
+  border-color: var(--focus-ring);
   box-shadow: 0 0 0 3px var(--accent-bg);
 }
 

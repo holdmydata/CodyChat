@@ -11,14 +11,20 @@
             "id": "f34e4487346d7303",
             "type": "leaf",
             "state": {
-              "type": "markdown",
+              "type": "kanban",
               "state": {
-                "file": "test.md",
-                "mode": "source",
-                "source": false
+                "file": "Kanban.md",
+                "kanbanViewState": {
+                  "kanban-plugin": "board",
+                  "list-collapse": [
+                    null,
+                    null,
+                    null
+                  ]
+                }
               },
-              "icon": "lucide-file",
-              "title": "test"
+              "icon": "lucide-trello",
+              "title": "Kanban"
             }
           }
         ]
@@ -188,19 +194,19 @@
   },
   "active": "f34e4487346d7303",
   "lastOpenFiles": [
-    "MEMORY.md.tmp.16152.7f82d87038e3",
-    "Kanban.md.tmp.16152.6a511459459a",
-    "Kanban.md.tmp.16152.aa8fcd710b6b",
-    "Kanban.md.tmp.16152.41503bef1c82",
-    "MEMORY.md.tmp.16152.54de0091aa95",
-    "Kanban.md.tmp.16152.2a3d0b57024d",
-    "MEMORY.md.tmp.16152.61eba3d46a55",
-    "Kanban.md.tmp.16152.20bea1472cae",
-    "Kanban.md.tmp.16152.63dd9827fa8a",
-    "Kanban.md",
-    "Kanban.md.tmp.16152.b20b5fae8908",
-    "MEMORY.md.tmp.16152.f4394e3f1ebb",
     "test.md",
+    "Kanban.md.tmp.16152.b8b8f44de79f",
+    "MEMORY.md.tmp.16152.5444d0400468",
+    "Kanban.md.tmp.16152.40e7ff87d184",
+    "Kanban.md.tmp.16152.05ce58737a18",
+    "MEMORY.md.tmp.16152.94057967bd9c",
+    "Kanban.md.tmp.16152.74f767ac97bb",
+    "MEMORY.md.tmp.16152.e5df9c8a02c8",
+    "Kanban.md.tmp.16152.688861840316",
+    "Kanban.md.tmp.16152.1a8e749a1f0a",
+    "Kanban.md.tmp.16152.15d5ade178c8",
+    "codyfinds.md",
+    "Kanban.md",
     "Session-Summary-2026-08-14.md",
     "Untitled Kanban.md",
     "Architecture/Frontend.md",

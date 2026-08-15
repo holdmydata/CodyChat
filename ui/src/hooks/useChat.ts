@@ -1,15 +1,55 @@
 import { useCallback, useRef, useState } from 'react';
-import { streamChat, type WireMessage } from '../lib/ollama';
+import { invoke } from '@tauri-apps/api/core';
+import { getCurrentWindow } from '@tauri-apps/api/window';
+import { sendNotification, isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification';
+import { streamChat, OllamaError, type WireMessage } from '../lib/ollama';
 import { executeSkill, getToolDefinitions, type ToolDefinition } from '../lib/skills';
 import { getEnvironmentInfo, formatEnvironmentContext } from '../lib/environment';
 import { summarizeArgs, summarizeValue } from '../lib/format';
+import { budgetTokensFor, estimateTokens, trimMessagesToBudget } from '../lib/contextBudget';
 import type { ActivityStep, Conversation, Message, ToolCall } from '../types';
 export type { ActivityStatus, ActivityStep } from '../types';
+
+// Notifies only while the window is hidden/unfocused — no point interrupting
+// with an OS notification for something already visible on screen. The
+// tool-approval case gets a real toast with Approve/Deny buttons (built via
+// a custom Rust command, notify_pending_approval — the official plugin's
+// action-button support turned out to be mobile-only); the plain
+// "response ready" case just needs a title/body, which the official plugin
+// handles fine on its own.
+async function notifyIfHidden(kind: 'approval', call: ToolCall): Promise<void>;
+async function notifyIfHidden(kind: 'response', preview: string): Promise<void>;
+async function notifyIfHidden(kind: 'approval' | 'response', arg: ToolCall | string): Promise<void> {
+  try {
+    const focused = await getCurrentWindow().isFocused();
+    if (focused) return;
+
+    if (kind === 'approval') {
+      const call = arg as ToolCall;
+      await invoke('notify_pending_approval', {
+        tool_name: call.name,
+        args_summary: summarizeArgs(call.arguments),
+      });
+      return;
+    }
+
+    let granted = await isPermissionGranted();
+    if (!granted) {
+      granted = (await requestPermission()) === 'granted';
+    }
+    if (!granted) return;
+    await sendNotification({ title: 'CodyChat', body: arg as string });
+  } catch {
+    // Notifications are a courtesy, not a correctness requirement — a
+    // failure here shouldn't interrupt the actual chat/approval flow.
+  }
+}
 
 const makeId = () => crypto.randomUUID();
 
 // Guards against a runaway model calling tools forever without ever
-// producing a final answer.
+// producing a final answer. Hitting this pauses the turn rather than
+// dead-ending it — see pausedMessages/continueTurn below.
 const MAX_TOOL_ITERATIONS = 6;
 
 // Standing behavioral hint, always folded into the system prompt alongside
@@ -23,6 +63,10 @@ const AGENT_BEHAVIOR_HINT =
   "Avoid re-attempting the same kind of change speculatively or re-litigating an already-successful tool result. If a task is " +
   'inherently hard to get exactly right in one pass (e.g. hand-drafting detailed visual content like SVG art), do your best ' +
   'single attempt, briefly note any limitation, and stop rather than looping to perfect it.';
+
+const RETRY_TRIM_MESSAGE = '*(Note: earlier tool results were trimmed to fit the context window.)*\n\n';
+const OVERFLOW_AFTER_RETRY_MESSAGE =
+  "(The conversation is too large for this model's context window, even after trimming. Try raising context length in Settings, or start a new conversation.)";
 
 interface UseChatArgs {
   baseUrl: string;
@@ -45,11 +89,29 @@ function toWireMessages(messages: Pick<Message, 'role' | 'content' | 'toolCalls'
   }));
 }
 
+// True when a streamAssistantReply attempt came back as a normal,
+// successful completion (no thrown error) that nonetheless produced
+// nothing usable — the model streamed thinking tokens and then just
+// stopped, with no content and no tool calls. Ollama doesn't error out in
+// this case (it's not a rejected request), so this has to be detected
+// from the shape of the result rather than caught as an exception.
+function isEmptyThinkingOnly(result: { current: Message[]; assistantId: string; toolCalls: ToolCall[] | null }): boolean {
+  if (result.toolCalls) return false;
+  const msg = result.current.find((m) => m.id === result.assistantId);
+  return Boolean(msg && !msg.content && msg.thinking);
+}
+
 export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools, mcpTools }: UseChatArgs) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingToolCall, setPendingToolCall] = useState<ToolCall | null>(null);
   const [activitySteps, setActivitySteps] = useState<ActivityStep[]>([]);
+  // The message list a turn was paused at when MAX_TOOL_ITERATIONS was
+  // hit — null when there's nothing to continue. Lets a "Continue" action
+  // resume from exactly where the model left off, with a fresh iteration
+  // budget, rather than the old dead-end (only recourse was a brand-new
+  // message, which worked but didn't feel like resuming).
+  const [pausedMessages, setPausedMessages] = useState<Message[] | null>(null);
   // Mirrors activitySteps synchronously so the final snapshot stamped onto
   // a message doesn't read stale state from a closure.
   const activityStepsRef = useRef<ActivityStep[]>([]);
@@ -70,6 +132,7 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
 
   const requestApproval = useCallback((call: ToolCall): Promise<boolean> => {
     setPendingToolCall(call);
+    notifyIfHidden('approval', call);
     return new Promise((resolve) => {
       approvalResolverRef.current = (approved) => {
         setPendingToolCall(null);
@@ -89,146 +152,244 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
     approvalResolverRef.current?.(false);
   }, []);
 
-  const sendMessage = useCallback(
-    async (content: string) => {
-      // Defense in depth against a second overlapping turn — the primary
-      // guard lives in MessageInput (Enter used to bypass the hidden Send
-      // button while streaming), but nothing should be able to start a new
-      // turn while one is already in flight regardless of entry point.
-      if (!conversation || !content.trim() || isStreaming) return;
-      setError(null);
+  // One streaming attempt: builds the trimmed wire history for `historyMsgs`
+  // against `budgetTokens`, appends a fresh assistant placeholder, streams
+  // the reply, and returns the updated message list + any requested tool
+  // calls. Factored out (rather than inlined once) so the reactive retry
+  // below can cleanly redo this from scratch on a stricter budget instead
+  // of trying to patch a possibly-partially-streamed message in place.
+  const streamAssistantReply = useCallback(
+    async (
+      conv: Conversation,
+      historyMsgs: Message[],
+      budgetTokens: number,
+      systemContent: string,
+      activeTools: ToolDefinition[],
+      signal: AbortSignal
+    ): Promise<{ current: Message[]; assistantId: string; toolCalls: ToolCall[] | null }> => {
+      const trimmed = trimMessagesToBudget(historyMsgs, budgetTokens);
+      const historyBase = toWireMessages(trimmed);
+      const history: WireMessage[] = systemContent
+        ? [{ role: 'system', content: systemContent }, ...historyBase]
+        : historyBase;
 
-      const userMessage: Message = {
-        id: makeId(),
-        role: 'user',
-        content,
-        createdAt: Date.now(),
-      };
-      const messages = [...conversation.messages, userMessage];
-      onMessagesChange(conversation.id, messages);
+      const assistantMessage: Message = { id: makeId(), role: 'assistant', content: '', createdAt: Date.now() };
+      let current = [...historyMsgs, assistantMessage];
+      onMessagesChange(conv.id, current);
 
-      const controller = new AbortController();
-      abortRef.current = controller;
-      setIsStreaming(true);
-      activityStepsRef.current = [];
-      setActivitySteps([]);
+      let assembled = '';
+      let assembledThinking = '';
+      let toolCalls: ToolCall[] | null = null;
 
-      const runTurn = async (msgs: Message[], depth: number): Promise<void> => {
-        if (depth > MAX_TOOL_ITERATIONS) {
+      await streamChat({
+        baseUrl,
+        model: conv.model,
+        messages: history,
+        params: conv.params,
+        signal,
+        tools: activeTools.length ? activeTools : undefined,
+        onToken: (token) => {
+          assembled += token;
+          current = current.map((m) => (m.id === assistantMessage.id ? { ...m, content: assembled } : m));
+          onMessagesChange(conv.id, current);
+        },
+        onThinking: (token) => {
+          assembledThinking += token;
+          current = current.map((m) => (m.id === assistantMessage.id ? { ...m, thinking: assembledThinking } : m));
+          onMessagesChange(conv.id, current);
+        },
+        onToolCalls: (calls) => {
+          toolCalls = calls;
+          current = current.map((m) => (m.id === assistantMessage.id ? { ...m, toolCalls: calls } : m));
+          onMessagesChange(conv.id, current);
+          updateActivitySteps((prev) => [
+            ...prev,
+            ...calls.map((c) => ({
+              id: c.id,
+              toolName: c.name,
+              argsSummary: summarizeArgs(c.arguments),
+              status: 'pending_approval' as const,
+            })),
+          ]);
+        },
+      });
+
+      return { current, assistantId: assistantMessage.id, toolCalls };
+    },
+    [baseUrl, onMessagesChange, updateActivitySteps]
+  );
+
+  // retryState is a single mutable object created once per top-level turn
+  // (in beginTurn below) and threaded through every recursive call — one
+  // retry allowed for the *whole* turn, not one per tool-call depth level,
+  // so a systemic overflow can't effectively double the iteration cap.
+  const runTurn = useCallback(
+    async (msgs: Message[], depth: number, retryState: { used: boolean }): Promise<void> => {
+      if (!conversation) return;
+
+      if (depth > MAX_TOOL_ITERATIONS) {
+        const notice: Message = {
+          id: makeId(),
+          role: 'assistant',
+          content: '(Stopped: too many tool calls in a row without a final answer.)',
+          createdAt: Date.now(),
+          activitySteps: activityStepsRef.current.length ? activityStepsRef.current : undefined,
+        };
+        onMessagesChange(conversation.id, [...msgs, notice]);
+        setPausedMessages(msgs);
+        return;
+      }
+
+      const systemParts = [AGENT_BEHAVIOR_HINT, envContextRef.current, conversation.systemPrompt].filter(
+        (s): s is string => Boolean(s && s.trim())
+      );
+      const systemContent = systemParts.join('\n\n');
+      const systemTokens = systemContent ? estimateTokens(systemContent) : 0;
+      const budgetTokens = Math.max(0, budgetTokensFor(conversation.params.numCtx) - systemTokens);
+
+      const activeTools = [
+        ...(toolsRef.current?.filter((t) => !disabledTools?.has(t.function.name)) ?? []),
+        ...(mcpTools ?? []),
+      ];
+      const signal = abortRef.current?.signal;
+      if (!signal) return;
+
+      let attemptResult: { current: Message[]; assistantId: string; toolCalls: ToolCall[] | null } | null = null;
+      let overflowError: OllamaError | null = null;
+      try {
+        attemptResult = await streamAssistantReply(conversation, msgs, budgetTokens, systemContent, activeTools, signal);
+      } catch (err) {
+        if (err instanceof OllamaError && err.likelyContextOverflow) {
+          overflowError = err;
+        } else {
+          throw err;
+        }
+      }
+
+      // Two different shapes of "ran out of room" land here: a thrown
+      // overflow error (Ollama rejected the request outright), and —
+      // confirmed live, this is the one the initial fix missed — a
+      // *successful* 200 OK stream that contains only thinking and no
+      // content/tool calls at all. The model didn't get rejected; it just
+      // spent its whole remaining generation budget thinking and never
+      // reached an actual answer, which is a generation-side problem, not
+      // a request-size one. Trimming the input further still helps here
+      // though: less input sent means more of numCtx is left over for the
+      // model's own output, so both cases get the same retry, just with a
+      // much harder cut for the empty-completion case since freeing
+      // generation headroom is specifically the point of it.
+      const producedNothing = attemptResult ? isEmptyThinkingOnly(attemptResult) : false;
+      if ((overflowError || producedNothing) && !retryState.used) {
+        retryState.used = true;
+        // Roll the visible transcript back — streamAssistantReply already
+        // pushed a (possibly partially-streamed) assistant placeholder via
+        // onMessagesChange, which must not survive into the retry.
+        onMessagesChange(conversation.id, msgs);
+        try {
+          const retried = await streamAssistantReply(
+            conversation,
+            msgs,
+            Math.floor(budgetTokens * (overflowError ? 0.5 : 0.25)),
+            systemContent,
+            activeTools,
+            signal
+          );
+          if (isEmptyThinkingOnly(retried)) {
+            throw new Error('retry also produced no content');
+          }
+          attemptResult = {
+            ...retried,
+            current: retried.current.map((m) =>
+              m.id === retried.assistantId && m.content ? { ...m, content: RETRY_TRIM_MESSAGE + m.content } : m
+            ),
+          };
+          onMessagesChange(conversation.id, attemptResult.current);
+        } catch {
           const notice: Message = {
             id: makeId(),
             role: 'assistant',
-            content: '(Stopped: too many tool calls in a row without a final answer.)',
+            content: OVERFLOW_AFTER_RETRY_MESSAGE,
             createdAt: Date.now(),
             activitySteps: activityStepsRef.current.length ? activityStepsRef.current : undefined,
           };
           onMessagesChange(conversation.id, [...msgs, notice]);
           return;
         }
+      } else if (overflowError) {
+        // Overflow error, but the one retry this turn is already spent —
+        // no more automatic recovery available; surface it like any other
+        // failure (the outer catch in beginTurn sets the `error` state).
+        throw overflowError;
+      }
 
-        const assistantMessage: Message = {
-          id: makeId(),
-          role: 'assistant',
-          content: '',
-          createdAt: Date.now(),
-        };
-        let current = [...msgs, assistantMessage];
-        onMessagesChange(conversation.id, current);
+      if (!attemptResult) return;
 
-        const historyBase = toWireMessages(msgs);
-        const systemParts = [AGENT_BEHAVIOR_HINT, envContextRef.current, conversation.systemPrompt].filter(
-          (s): s is string => Boolean(s && s.trim())
-        );
-        const history: WireMessage[] = systemParts.length
-          ? [{ role: 'system', content: systemParts.join('\n\n') }, ...historyBase]
-          : historyBase;
+      const { assistantId, toolCalls } = attemptResult;
+      let current = attemptResult.current;
 
-        let assembled = '';
-        let assembledThinking = '';
-        let toolCalls: ToolCall[] | null = null;
-
-        const activeTools = [
-          ...(toolsRef.current?.filter((t) => !disabledTools?.has(t.function.name)) ?? []),
-          ...(mcpTools ?? []),
-        ];
-
-        await streamChat({
-          baseUrl,
-          model: conversation.model,
-          messages: history,
-          params: conversation.params,
-          signal: controller.signal,
-          tools: activeTools?.length ? activeTools : undefined,
-          onToken: (token) => {
-            assembled += token;
-            current = current.map((m) => (m.id === assistantMessage.id ? { ...m, content: assembled } : m));
-            onMessagesChange(conversation.id, current);
-          },
-          onThinking: (token) => {
-            assembledThinking += token;
-            current = current.map((m) => (m.id === assistantMessage.id ? { ...m, thinking: assembledThinking } : m));
-            onMessagesChange(conversation.id, current);
-          },
-          onToolCalls: (calls) => {
-            toolCalls = calls;
-            current = current.map((m) => (m.id === assistantMessage.id ? { ...m, toolCalls: calls } : m));
-            onMessagesChange(conversation.id, current);
-            updateActivitySteps((prev) => [
-              ...prev,
-              ...calls.map((c) => ({
-                id: c.id,
-                toolName: c.name,
-                argsSummary: summarizeArgs(c.arguments),
-                status: 'pending_approval' as const,
-              })),
-            ]);
-          },
-        });
-
-        if (!toolCalls) {
-          if (activityStepsRef.current.length) {
-            current = current.map((m) =>
-              m.id === assistantMessage.id ? { ...m, activitySteps: activityStepsRef.current } : m
-            );
-            onMessagesChange(conversation.id, current);
-          }
-          return;
-        }
-
-        for (const call of toolCalls as ToolCall[]) {
-          const approved = await requestApproval(call);
-          updateActivitySteps((prev) =>
-            prev.map((s) => (s.id === call.id ? { ...s, status: approved ? 'running' : 'denied' } : s))
-          );
-          let result: string;
-          if (approved) {
-            try {
-              result = await executeSkill(call);
-              updateActivitySteps((prev) =>
-                prev.map((s) => (s.id === call.id ? { ...s, status: 'done', resultSummary: summarizeValue(result) } : s))
-              );
-            } catch (err) {
-              result = `error: ${(err as Error).message ?? String(err)}`;
-              updateActivitySteps((prev) =>
-                prev.map((s) => (s.id === call.id ? { ...s, status: 'error', resultSummary: summarizeValue(result) } : s))
-              );
-            }
-          } else {
-            result = `User declined to run skill '${call.name}'.`;
-          }
-          const toolResultMessage: Message = {
-            id: makeId(),
-            role: 'tool',
-            content: result,
-            toolCallId: call.id,
-            createdAt: Date.now(),
-          };
-          current = [...current, toolResultMessage];
+      if (!toolCalls) {
+        if (activityStepsRef.current.length) {
+          current = current.map((m) => (m.id === assistantId ? { ...m, activitySteps: activityStepsRef.current } : m));
           onMessagesChange(conversation.id, current);
         }
+        const finalContent = current.find((m) => m.id === assistantId)?.content;
+        if (finalContent) {
+          notifyIfHidden('response', summarizeValue(finalContent, 150));
+        }
+        return;
+      }
 
-        await runTurn(current, depth + 1);
-      };
+      for (const call of toolCalls as ToolCall[]) {
+        const approved = await requestApproval(call);
+        updateActivitySteps((prev) =>
+          prev.map((s) => (s.id === call.id ? { ...s, status: approved ? 'running' : 'denied' } : s))
+        );
+        let result: string;
+        if (approved) {
+          try {
+            result = await executeSkill(call);
+            updateActivitySteps((prev) =>
+              prev.map((s) => (s.id === call.id ? { ...s, status: 'done', resultSummary: summarizeValue(result) } : s))
+            );
+          } catch (err) {
+            result = `error: ${(err as Error).message ?? String(err)}`;
+            updateActivitySteps((prev) =>
+              prev.map((s) => (s.id === call.id ? { ...s, status: 'error', resultSummary: summarizeValue(result) } : s))
+            );
+          }
+        } else {
+          result = `User declined to run skill '${call.name}'.`;
+        }
+        const toolResultMessage: Message = {
+          id: makeId(),
+          role: 'tool',
+          content: result,
+          toolCallId: call.id,
+          createdAt: Date.now(),
+        };
+        current = [...current, toolResultMessage];
+        onMessagesChange(conversation.id, current);
+      }
+
+      await runTurn(current, depth + 1, retryState);
+    },
+    [conversation, disabledTools, mcpTools, onMessagesChange, requestApproval, streamAssistantReply, updateActivitySteps]
+  );
+
+  // Shared setup for both a brand-new message and a Continue click: fresh
+  // abort controller, streaming state, activity log, and the lazy
+  // tools/env-context init that used to live only in sendMessage.
+  const beginTurn = useCallback(
+    async (msgs: Message[]) => {
+      if (!conversation) return;
+      setError(null);
+      setPausedMessages(null);
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+      setIsStreaming(true);
+      activityStepsRef.current = [];
+      setActivitySteps([]);
 
       try {
         if (!toolsRef.current) {
@@ -241,7 +402,7 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
             envContextRef.current = '';
           }
         }
-        await runTurn(messages, 0);
+        await runTurn(msgs, 0, { used: false });
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
           setError((err as Error).message);
@@ -251,8 +412,34 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
         abortRef.current = null;
       }
     },
-    [baseUrl, conversation, onMessagesChange, requestApproval, isStreaming, disabledTools, mcpTools]
+    [conversation, runTurn]
   );
+
+  const sendMessage = useCallback(
+    async (content: string) => {
+      // Defense in depth against a second overlapping turn — the primary
+      // guard lives in MessageInput (Enter used to bypass the hidden Send
+      // button while streaming), but nothing should be able to start a new
+      // turn while one is already in flight regardless of entry point.
+      if (!conversation || !content.trim() || isStreaming) return;
+
+      const userMessage: Message = {
+        id: makeId(),
+        role: 'user',
+        content,
+        createdAt: Date.now(),
+      };
+      const messages = [...conversation.messages, userMessage];
+      onMessagesChange(conversation.id, messages);
+      await beginTurn(messages);
+    },
+    [conversation, isStreaming, onMessagesChange, beginTurn]
+  );
+
+  const continueTurn = useCallback(async () => {
+    if (!conversation || isStreaming || !pausedMessages) return;
+    await beginTurn(pausedMessages);
+  }, [conversation, isStreaming, pausedMessages, beginTurn]);
 
   return {
     sendMessage,
@@ -263,5 +450,7 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
     approveToolCall,
     denyToolCall,
     activitySteps,
+    continueTurn,
+    canContinue: pausedMessages !== null,
   };
 }

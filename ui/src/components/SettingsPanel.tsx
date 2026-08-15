@@ -80,10 +80,6 @@ export function SettingsPanel({
 
   return (
     <div className="settings-panel">
-      <p className="settings-panel__hint">
-        Connected to <code>{baseUrl}</code> — change the base URL in Settings → General.
-      </p>
-
       {modelInfoError ? (
         <p className="settings-panel__model-info settings-panel__model-info--error">
           Couldn't load model info: {modelInfoError}

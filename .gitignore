@@ -4,3 +4,5 @@
 # OS cruft
 .DS_Store
 Thumbs.db
+
+local-assets/

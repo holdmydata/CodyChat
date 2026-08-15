@@ -37,7 +37,33 @@ export interface ModelInfo {
   contextLength: number | null;
 }
 
-export class OllamaError extends Error {}
+// status/likelyContextOverflow let callers (useChat.ts's retry logic)
+// distinguish "the conversation is probably too large for numCtx" from any
+// other failure, without re-parsing the message string.
+export class OllamaError extends Error {
+  status?: number;
+  likelyContextOverflow?: boolean;
+
+  constructor(message: string, opts?: { status?: number; likelyContextOverflow?: boolean }) {
+    super(message);
+    this.status = opts?.status;
+    this.likelyContextOverflow = opts?.likelyContextOverflow;
+  }
+}
+
+const CONTEXT_OVERFLOW_HINT =
+  ' (often means the conversation is too large for the context window — try a new conversation or raising context length in Settings)';
+
+// Ollama's own error text doesn't carry a machine-readable "this was a
+// context overflow" signal, so this is a heuristic over what it actually
+// says — status 500 combined with wording used for the two real overflow
+// shapes seen in this app's own history (a chat-template failure, and a
+// generic "too large" response).
+function looksLikeContextOverflow(status: number | undefined, detail: string): boolean {
+  if (status === 500) return true;
+  const lower = detail.toLowerCase();
+  return lower.includes('context') || lower.includes('too large') || lower.includes('exceed');
+}
 
 export async function listModels(baseUrl: string): Promise<OllamaModel[]> {
   const res = await fetch(`${baseUrl}/api/tags`);
@@ -139,8 +165,12 @@ export async function streamChat({
     } catch {
       // not JSON — fall back to raw body text
     }
-    const hint = res.status === 500 ? ' (often means the conversation is too large for the context window — try a new conversation or raising context length in Settings)' : '';
-    throw new OllamaError(`Chat request failed: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}${hint}`);
+    const overflow = looksLikeContextOverflow(res.status, detail);
+    const hint = overflow ? CONTEXT_OVERFLOW_HINT : '';
+    throw new OllamaError(
+      `Chat request failed: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}${hint}`,
+      { status: res.status, likelyContextOverflow: overflow }
+    );
   }
 
   const reader = res.body.getReader();
@@ -177,7 +207,14 @@ export async function streamChat({
         onToken(chunk.message.content);
       }
       if (chunk.error) {
-        throw new OllamaError(chunk.error);
+        // Same asymmetry fix as the initial-response path above — a
+        // mid-stream error (arrives after a 200 OK, once the response has
+        // already started) previously got no context-overflow hint at
+        // all, even though this is a real path a too-large request can
+        // fail through.
+        const overflow = looksLikeContextOverflow(undefined, chunk.error);
+        const hint = overflow ? CONTEXT_OVERFLOW_HINT : '';
+        throw new OllamaError(`${chunk.error}${hint}`, { likelyContextOverflow: overflow });
       }
     }
   }

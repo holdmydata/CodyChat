@@ -1,8 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
-import type { ChatParams, Conversation, ToolCall } from '../types';
+import type { Conversation, ToolCall } from '../types';
 import type { ActivityStep } from '../hooks/useChat';
 import { ModelPicker } from './ModelPicker';
-import { SettingsPanel } from './SettingsPanel';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { ToolApprovalPrompt } from './ToolApprovalPrompt';
@@ -12,8 +11,6 @@ interface ChatWindowProps {
   conversation: Conversation;
   baseUrl: string;
   onModelChange: (model: string) => void;
-  onSystemPromptChange: (prompt: string) => void;
-  onParamsChange: (params: ChatParams) => void;
   isStreaming: boolean;
   error: string | null;
   onSend: (content: string) => void;
@@ -22,14 +19,19 @@ interface ChatWindowProps {
   onApproveToolCall: () => void;
   onDenyToolCall: () => void;
   activitySteps: ActivityStep[];
+  /** True when a turn is paused at the tool-call iteration cap and can be resumed. */
+  canContinue: boolean;
+  onContinue: () => void;
+  /** True in the compact tray-widget window — the model picker doesn't fit there and isn't the point of that surface. */
+  compact?: boolean;
+  /** Bumped by Settings → General's "Save as custom model" so the picker refreshes without needing to be the one that triggered the save. */
+  modelListRefreshKey?: number;
 }
 
 export function ChatWindow({
   conversation,
   baseUrl,
   onModelChange,
-  onSystemPromptChange,
-  onParamsChange,
   isStreaming,
   error,
   onSend,
@@ -38,9 +40,11 @@ export function ChatWindow({
   onApproveToolCall,
   onDenyToolCall,
   activitySteps,
+  canContinue,
+  onContinue,
+  compact,
+  modelListRefreshKey,
 }: ChatWindowProps) {
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [modelListRefreshKey, setModelListRefreshKey] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
   // Only auto-follow new content if the user is already near the bottom —
   // otherwise streaming tokens/thinking updates yank them back down every
@@ -85,31 +89,15 @@ export function ChatWindow({
 
   return (
     <div className="chat-window">
-      <header className="chat-window__header">
-        <ModelPicker
-          baseUrl={baseUrl}
-          value={conversation.model}
-          onChange={onModelChange}
-          refreshKey={modelListRefreshKey}
-        />
-        <button
-          className="chat-window__settings-toggle"
-          onClick={() => setSettingsOpen((v) => !v)}
-        >
-          {settingsOpen ? 'Hide settings' : 'Settings'}
-        </button>
-      </header>
-
-      {settingsOpen && (
-        <SettingsPanel
-          baseUrl={baseUrl}
-          model={conversation.model}
-          systemPrompt={conversation.systemPrompt}
-          onSystemPromptChange={onSystemPromptChange}
-          params={conversation.params}
-          onParamsChange={onParamsChange}
-          onModelCreated={() => setModelListRefreshKey((k) => k + 1)}
-        />
+      {!compact && (
+        <header className="chat-window__header">
+          <ModelPicker
+            baseUrl={baseUrl}
+            value={conversation.model}
+            onChange={onModelChange}
+            refreshKey={modelListRefreshKey}
+          />
+        </header>
       )}
 
       <div className="chat-window__messages-wrap">
@@ -141,6 +129,15 @@ export function ChatWindow({
 
       {pendingToolCall && (
         <ToolApprovalPrompt call={pendingToolCall} onApprove={onApproveToolCall} onDeny={onDenyToolCall} />
+      )}
+
+      {!isStreaming && !pendingToolCall && canContinue && (
+        <div className="chat-window__continue">
+          <span>Paused after too many tool calls in a row.</span>
+          <button type="button" onClick={onContinue}>
+            Continue
+          </button>
+        </div>
       )}
 
       <MessageInput

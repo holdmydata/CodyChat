@@ -19,9 +19,14 @@ export function ModelPicker({ baseUrl, value, onChange, refreshKey }: ModelPicke
         if (cancelled) return;
         setModels(list);
         setError(null);
-        if (list.length > 0 && !list.some((m) => m.name === value)) {
-          onChange(list[0].name);
-        }
+        // Deliberately does NOT auto-reassign the conversation's model when
+        // it isn't in this fetch — that used to silently swap to
+        // list[0].name, permanently overwriting a saved custom model
+        // (whose system prompt is baked in server-side via /api/create) the
+        // moment a listing lagged or genuinely came up short. A missing
+        // model is now surfaced as its own option instead (see render
+        // below) so the user can see what happened and choose explicitly,
+        // rather than losing their selection without ever being told.
       })
       .catch((err) => {
         if (!cancelled) setError(err.message);
@@ -29,20 +34,23 @@ export function ModelPicker({ baseUrl, value, onChange, refreshKey }: ModelPicke
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUrl, refreshKey]);
 
   if (error) {
     return <span className="model-picker model-picker--error" title={error}>no models</span>;
   }
 
+  const currentMissing = models.length > 0 && value && !models.some((m) => m.name === value);
+
   return (
     <select
-      className="model-picker"
+      className={`model-picker${currentMissing ? ' model-picker--missing' : ''}`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
+      title={currentMissing ? `"${value}" wasn't found on this Ollama instance — pick a different model.` : undefined}
     >
       {models.length === 0 && <option value="">loading…</option>}
+      {currentMissing && <option value={value}>⚠ {value} (not found)</option>}
       {models.map((m) => (
         <option key={m.name} value={m.name}>
           {m.name}

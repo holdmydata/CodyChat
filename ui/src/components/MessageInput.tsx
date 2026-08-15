@@ -33,7 +33,7 @@ export function MessageInput({ disabled, isStreaming, onSend, onStop }: MessageI
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Message the model… (Enter to send, Shift+Enter for newline)"
+        placeholder="Message the model…"
         disabled={disabled}
         rows={3}
       />
