@@ -84,7 +84,11 @@ export function useChat({ baseUrl, conversation, onMessagesChange }: UseChatArgs
 
   const sendMessage = useCallback(
     async (content: string) => {
-      if (!conversation || !content.trim()) return;
+      // Defense in depth against a second overlapping turn — the primary
+      // guard lives in MessageInput (Enter used to bypass the hidden Send
+      // button while streaming), but nothing should be able to start a new
+      // turn while one is already in flight regardless of entry point.
+      if (!conversation || !content.trim() || isStreaming) return;
       setError(null);
 
       const userMessage: Message = {
@@ -235,7 +239,7 @@ export function useChat({ baseUrl, conversation, onMessagesChange }: UseChatArgs
         abortRef.current = null;
       }
     },
-    [baseUrl, conversation, onMessagesChange, requestApproval]
+    [baseUrl, conversation, onMessagesChange, requestApproval, isStreaming]
   );
 
   return {

@@ -2,7 +2,6 @@ import { useState, type ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import type { ActivityStep, Message } from '../types';
-import { STATUS_ICON } from './ActivityTracker';
 
 // react-markdown renders straight to React elements rather than an HTML
 // string, so there's no dangerouslySetInnerHTML/sanitization step needed
@@ -49,53 +48,63 @@ function ThinkingBreakout({ thinking, stillThinking }: { thinking: string; still
         </span>
         {stillThinking ? 'Thinking…' : 'Thought process'}
       </button>
-      {expanded && <div className="message__thinking">{thinking}</div>}
+      {expanded && (
+        <div className="message__thinking-content" style={{ maxWidth: '100%', wordBreak: 'break-word' }}>
+          {thinking}
+        </div>
+      )}
     </div>
   );
 }
 
-// Persists the ActivityTracker's live checklist onto the message that
-// concludes a turn, so the step-by-step log doesn't vanish once streaming
-// ends — the live tracker only exists while isStreaming is true.
-//
-// The inline view renders the same steps as a compact flow graph instead
-// of a plain vertical list: each step is a small status node, connectors
-// chain node to node, and the chain snakes across a 3-column grid so long
-// logs stay inside the ~75%-wide bubble. Each step's label (tool / args /
-// result) sits under its node. All of that is styled by
-// .activity-tracker--log in App.css; the markup deliberately mirrors the
-// live ActivityTracker's step shape, reusing the same classes.
-function ActivityLogBreakout({ steps }: { steps: ActivityStep[] }) {
+// Helper to render status icons consistent with ActivityTracker
+function StatusIcon({ status }: { status: string }) {
+  const icons: Record<string, string> = {
+    pending_approval: '⏸',
+    running: '⏳',
+    done: '✅',
+    denied: '🚫',
+    error: '⚠️',
+  };
+  return <span className="activity-tracker__icon">{icons[status] || '⏳'}</span>;
+}
+
+function ActivityTrackerStep({ step }: { step: ActivityStep }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
     <div className="message__thinking-block">
       <button
         type="button"
-        className="message__thinking-toggle"
+        className={`message__thinking-toggle ${expanded ? 'message__thinking-toggle--expanded' : ''}`}
         onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+        aria-label={`${step.toolName} — ${expanded ? 'collapse' : 'expand'} activity details`}
       >
-        <span className={`message__thinking-chevron ${expanded ? 'message__thinking-chevron--open' : ''}`}>
-          ▸
-        </span>
-        Activity log ({steps.length} step{steps.length === 1 ? '' : 's'})
+        <StatusIcon status={step.status} />
+        <code className="message__thinking-tool">{step.toolName}</code>
+        {expanded && (
+          <>
+            <span className="message__thinking-chevron">▼</span>
+            {step.resultSummary && (
+              <span className="message__thinking-result">→ {step.resultSummary}</span>
+            )}
+            {!step.resultSummary && step.status === 'error' && (
+              <span className="message__thinking-error">No result available</span>
+            )}
+          </>
+        )}
       </button>
-      {expanded && (
-        <div className="activity-tracker activity-tracker--log" role="list" aria-label="Tool activity log">
-          {steps.map((step) => (
-            <div
-              key={step.id}
-              role="listitem"
-              className={`activity-tracker__step activity-tracker__step--${step.status}`}
-            >
-              <span className="activity-tracker__icon">{STATUS_ICON[step.status]}</span>
-              <code className="activity-tracker__tool">{step.toolName}</code>
-              <span className="activity-tracker__args">({step.argsSummary})</span>
-              {step.resultSummary && <span className="activity-tracker__result">→ {step.resultSummary}</span>}
-            </div>
-          ))}
-        </div>
-      )}
+    </div>
+  );
+}
+
+function ActivityLogBreakout({ steps }: { steps: ActivityStep[] }) {
+  return (
+    <div className="message__thinking-block-list" role="list" aria-label="Tool activity log">
+      {steps.map((step) => (
+        <ActivityTrackerStep key={step.id} step={step} />
+      ))}
     </div>
   );
 }
@@ -105,7 +114,7 @@ export function MessageBubble({ message, isStreaming }: { message: Message; isSt
     return (
       <div className="message message--tool">
         <div className="message__role">tool result</div>
-        <pre className="message__tool-result">{message.content}</pre>
+        <pre className="message__tool-result" style={{ maxWidth: '100%', wordBreak: 'break-word' }}>{message.content}</pre>
       </div>
     );
   }
@@ -128,14 +137,14 @@ export function MessageBubble({ message, isStreaming }: { message: Message; isSt
         message.toolCalls!.map((call) => (
           <div key={call.id} className="message__tool-call">
             🔧 Called <code>{call.name}</code>
-            <code className="message__tool-call-args">{JSON.stringify(call.arguments)}</code>
+            <code className="message__tool-call-args" style={{ maxWidth: '100%', wordBreak: 'break-word' }}>{JSON.stringify(call.arguments)}</code>
           </div>
         ))}
       {message.content ? (
         <div className="message__content">{renderContent(message.content)}</div>
       ) : stillThinking || hasToolCalls ? null : endedWithNoContent ? (
         <div className="message__content">
-          <span className="message__empty">
+          <span className="message__empty" style={{ maxWidth: '100%', wordBreak: 'break-word' }}>
             No response — the model likely ran out of context space while thinking. Try raising the
             context length in Settings, or ask a more focused question.
           </span>

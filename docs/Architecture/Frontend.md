@@ -179,3 +179,17 @@ Two separate real incidents — the duck SVG write test and the ActivityTracker.
 **Fix:** `AGENT_BEHAVIOR_HINT` (`useChat.ts`) — a short standing instruction ("work efficiently... converge on a final answer within a few tool calls... don't loop trying to perfect it"), always folded into the system prompt via the same `systemParts` mechanism as the environment-context fix, ahead of environment facts and the user's own system prompt. Pure text, no new hooks — unlike earlier edits to this area, this one can't trigger the hook-count HMR crash class.
 
 `tsc --noEmit` clean. Not yet manually re-verified whether it actually reduces the overthinking pattern.
+
+### Stuck approval prompt: a real concurrency bug (Phase 3, 2026-08-14)
+
+Hit directly by the user: typed a correction ("we're working in D:, not C:") into the input while a `ToolApprovalPrompt` was still showing, sent it, and the prompt stayed stuck on screen instead of closing.
+
+**Root cause:** `MessageInput`'s textarea was only ever disabled by `!conversation.model`, never by `isStreaming`. The Send button correctly swaps to Stop while streaming, but pressing Enter in the textarea called `submit()` unconditionally, bypassing that UI state entirely — firing a second, fully concurrent `sendMessage()` while the first turn was still suspended inside `await requestApproval(call)`. The first turn's `pendingToolCall` was never resolved (nobody clicked Approve/Deny, and `stop()` was never called either), so it stayed rendered indefinitely while a second turn ran independently alongside it — both writing to the same `conversation.messages` state via `onMessagesChange`, an actual race, not just a stale UI artifact.
+
+**Fixed at both the entry point and defensively inside the hook:** `MessageInput::submit()` now no-ops while `isStreaming`. `useChat.ts::sendMessage` also early-returns if `isStreaming` is already true (added to its own `useCallback` deps, since it now reads that state) — so no future caller, whatever path it comes through, can start a second overlapping turn.
+
+`tsc --noEmit` clean. Not yet manually re-verified.
+
+### Working-directory gap recurred for real (Phase 3, 2026-08-14)
+
+During the 9B graph-view dogfood test, the model needed to be manually corrected mid-conversation that the project lives on `D:` rather than `C:`. The environment-context fix (see above) only injects generic OS folders — home/Documents/Desktop/Downloads under `C:\Users\...` — nothing in the auto-injected context points at the actual project root on `D:\MeanSquares\AI`. Same class of gap as the original duck-SVG path-guessing incident that motivated the environment-context fix in the first place, just one level up: OS-level facts were fixed, project-level facts weren't. Logged as a stronger, now-evidence-backed case for the "working directory concept" backlog item — not built yet.

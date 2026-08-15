@@ -11,7 +11,11 @@ export function MessageInput({ disabled, isStreaming, onSend, onStop }: MessageI
   const [value, setValue] = useState('');
 
   const submit = () => {
-    if (!value.trim()) return;
+    // The Send button already hides itself while streaming, but Enter in
+    // the textarea bypassed that — letting a new message fire a second,
+    // concurrent sendMessage() while the first was still suspended
+    // awaiting tool approval, orphaning the pending prompt on screen.
+    if (!value.trim() || isStreaming) return;
     onSend(value);
     setValue('');
   };
