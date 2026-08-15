@@ -9,6 +9,7 @@ const TOOL_RISK: Record<string, ToolRisk> = {
   list_directory: 'read',
   search_files: 'read',
   write_file: 'write',
+  edit_file: 'write',
   execute_command: 'execute',
 };
 

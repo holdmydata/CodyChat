@@ -2,7 +2,7 @@ import { useState, type ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import type { ActivityStep, Message } from '../types';
-import { ActivityTrackerStep } from './ActivityTracker';
+import { TurnFlowGraph } from './ActivityTracker';
 
 // react-markdown renders straight to React elements rather than an HTML
 // string, so there's no dangerouslySetInnerHTML/sanitization step needed
@@ -56,7 +56,7 @@ function ThinkingBreakout({ thinking, stillThinking }: { thinking: string; still
   );
 }
 
-function ActivityLogBreakout({ steps }: { steps: ActivityStep[] }) {
+function ActivityLogBreakout({ steps, thinking }: { steps: ActivityStep[]; thinking?: string }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -71,13 +71,7 @@ function ActivityLogBreakout({ steps }: { steps: ActivityStep[] }) {
         </span>
         Activity log ({steps.length} step{steps.length === 1 ? '' : 's'})
       </button>
-      {expanded && (
-        <div className="activity-tracker activity-tracker--log" role="list" aria-label="Tool activity log">
-          {steps.map((step) => (
-            <ActivityTrackerStep key={step.id} step={step} collapsed />
-          ))}
-        </div>
-      )}
+      {expanded && <TurnFlowGraph steps={steps} thinking={thinking} variant="log" />}
     </div>
   );
 }
@@ -93,6 +87,7 @@ export function MessageBubble({ message, isStreaming }: { message: Message; isSt
   }
 
   const hasToolCalls = Boolean(message.toolCalls?.length);
+  const hasActivitySteps = Boolean(message.activitySteps?.length);
   const stillThinking = Boolean(isStreaming) && Boolean(message.thinking) && !message.content && !hasToolCalls;
   // Stream ended, model only ever emitted thinking (not a tool call either)
   // — most likely it ran out of context mid-thought and got truncated
@@ -102,10 +97,17 @@ export function MessageBubble({ message, isStreaming }: { message: Message; isSt
   return (
     <div className={`message message--${message.role}`}>
       <div className="message__role">{message.role}</div>
-      {message.thinking && (
+      {/* A turn that made tool calls folds its final thinking into the
+          flow graph below (as the last node, right before the answer) —
+          a separate standalone toggle for the same text would just be the
+          same content shown twice in two different widgets. Only turns
+          with no activity steps at all get the plain standalone toggle. */}
+      {message.thinking && !hasActivitySteps && (
         <ThinkingBreakout thinking={message.thinking} stillThinking={stillThinking} />
       )}
-      {message.activitySteps?.length ? <ActivityLogBreakout steps={message.activitySteps} /> : null}
+      {hasActivitySteps ? (
+        <ActivityLogBreakout steps={message.activitySteps!} thinking={message.thinking} />
+      ) : null}
       {hasToolCalls &&
         message.toolCalls!.map((call) => (
           <div key={call.id} className="message__tool-call">

@@ -63,6 +63,7 @@ export const BUILTIN_THEMES: ThemePack[] = [
       danger: '#d1435b',
       'user-bubble': 'rgba(240, 234, 255, 0.85)',
       'assistant-bubble': 'rgba(247, 246, 249, 0.85)',
+      'root-bg': '#f7f6f9',
     },
   },
   {
@@ -83,27 +84,64 @@ export const BUILTIN_THEMES: ThemePack[] = [
       danger: '#f0708a',
       'user-bubble': 'rgba(42, 35, 64, 0.85)',
       'assistant-bubble': 'rgba(28, 29, 36, 0.85)',
+      'root-bg': '#1c1d24',
     },
   },
   {
-    id: 'psyduck-yellow',
-    name: 'Psyduck Yellow',
+    id: 'psycho-duck',
+    name: 'Psycho Duck',
     author: 'MeanSquares',
     description: "Confused about its own colors. Do not ask.",
     scheme: 'light',
+    // Panel fills bumped to near-opaque (was ~0.78-0.85, matching the
+    // "translucent so packs pick up Mica" plan). Real Mica/Acrylic still
+    // doesn't render (see Kanban backlog) — the window falls back to a
+    // raw black surface with no compositing, so those low-alpha yellows
+    // were blending against black instead of glass, reading as muddy and
+    // dark rather than the intended bright pastel. Not a hypothetical:
+    // user-confirmed live, "dark colors and bad backgrounds". Kept a
+    // sliver of translucency (0.96-0.97, not 1) so this still picks up
+    // real glass the moment that investigation resolves; accent-bg/
+    // accent-border are unaffected on purpose — those render as tinted
+    // overlays on top of an already-opaque panel, not against raw window
+    // background, so they were never part of this problem.
     vars: {
       text: '#5d5533',
       'text-h': '#241d05',
-      bg: 'rgba(255, 246, 199, 0.78)',
-      'bg-alt': 'rgba(252, 243, 188, 0.85)',
-      border: 'rgba(214, 190, 96, 0.75)',
-      'code-bg': 'rgba(247, 238, 168, 0.85)',
+      bg: 'rgba(255, 246, 199, 0.96)',
+      'bg-alt': 'rgba(250, 238, 176, 0.97)',
+      border: 'rgba(199, 173, 84, 0.9)',
+      'code-bg': 'rgba(247, 236, 158, 0.96)',
       accent: '#a87c00',
       'accent-bg': 'rgba(255, 196, 0, 0.22)',
       'accent-border': 'rgba(168, 124, 0, 0.6)',
       danger: '#c2452e',
-      'user-bubble': 'rgba(255, 222, 89, 0.85)',
-      'assistant-bubble': 'rgba(252, 243, 188, 0.85)',
+      'user-bubble': 'rgba(255, 214, 71, 0.96)',
+      'assistant-bubble': 'rgba(250, 238, 176, 0.96)',
+      'root-bg': '#faeeb0',
+    },
+  },
+  {
+    id: 'hextech',
+    name: 'League of Legends',
+    author: 'MeanSquares',
+    description: 'Muted teal accent on dark-navy client blue with maroon and gold trim.',
+    scheme: 'dark',
+    vars: {
+      text: '#A09B8C',
+      'text-h': '#F0E6D2',
+      bg: 'rgba(10, 20, 40, 0.85)',
+      'bg-alt': 'rgba(9, 18, 36, 0.9)',
+      border: 'rgba(200, 170, 110, 0.4)',
+      'border-gold': 'rgba(200, 170, 110, 0.65)',
+      'code-bg': 'rgba(6, 14, 28, 0.92)',
+      accent: '#5AC8D8',
+      'accent-bg': 'rgba(90, 200, 216, 0.18)',
+      'accent-border': 'rgba(90, 200, 216, 0.55)',
+      danger: '#FF4D6D',
+      'user-bubble': 'rgba(95, 67, 33, 0.9)',
+      'assistant-bubble': 'rgba(8, 35, 40, 0.85)',
+      'root-bg': '#0A1428',
     },
   },
 ];

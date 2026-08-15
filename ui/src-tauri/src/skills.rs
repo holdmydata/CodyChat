@@ -45,6 +45,65 @@ pub fn write_file(path: String, content: String) -> Result<(), String> {
     fs::write(p, content).map_err(|e| e.to_string())
 }
 
+// edit_file: patch-style edit (find exact old_string, replace with
+// new_string) rather than write_file's full-overwrite semantics — see
+// docs/Kanban.md. write_file replacing an entire file's content is what
+// caused a real write collision (a concurrent unrelated edit to App.css was
+// silently dropped by an overwrite). Matching Claude Code's own Edit tool
+// shape deliberately: old_string must match the file's *current* on-disk
+// content exactly and uniquely (unless replace_all), so a stale read from
+// earlier in the conversation fails loudly instead of silently clobbering
+// whatever changed underneath it.
+
+// rename_all = "snake_case": Tauri's command macro defaults to matching
+// incoming JS argument keys as camelCase against the Rust parameter names
+// (so `old_string` here would only match an `oldString` key sent from JS).
+// Every argument name here is snake_case to match the JSON tool schema sent
+// to Ollama (see get_tool_definitions below) and the model's own tool-call
+// arguments, which are forwarded to invoke() unmodified — this opts the
+// command out of the camelCase default so those keys actually match. Real
+// bug, caught live: the model's edit_file call failed with "missing
+// required key oldString" until this was added.
+#[tauri::command(rename_all = "snake_case")]
+pub fn edit_file(
+    path: String,
+    old_string: String,
+    new_string: String,
+    replace_all: Option<bool>,
+) -> Result<String, String> {
+    let p = Path::new(&path);
+    if !p.is_file() {
+        return Err(format!("not a file: {path}"));
+    }
+    if old_string.is_empty() {
+        return Err("old_string must not be empty".to_string());
+    }
+    let content = fs::read_to_string(p).map_err(|e| e.to_string())?;
+    let count = content.matches(old_string.as_str()).count();
+    if count == 0 {
+        return Err(
+            "old_string not found — it must match the file's current content exactly \
+             (whitespace included). Re-read the file if it may have changed."
+                .to_string(),
+        );
+    }
+    let replace_all = replace_all.unwrap_or(false);
+    if count > 1 && !replace_all {
+        return Err(format!(
+            "old_string matches {count} locations — add more surrounding context to make it \
+             unique, or pass replace_all: true to replace all of them"
+        ));
+    }
+    let new_content = if replace_all {
+        content.replace(old_string.as_str(), new_string.as_str())
+    } else {
+        content.replacen(old_string.as_str(), new_string.as_str(), 1)
+    };
+    fs::write(p, &new_content).map_err(|e| e.to_string())?;
+    let n = if replace_all { count } else { 1 };
+    Ok(format!("Replaced {n} occurrence(s) in {path}"))
+}
+
 #[derive(Serialize)]
 pub struct DirEntryInfo {
     name: String,
@@ -166,7 +225,10 @@ fn search_dir(
     }
 }
 
-#[tauri::command]
+// Same rename_all fix as edit_file above — file_glob/case_sensitive/
+// max_results are all multi-word and would otherwise only match camelCase
+// keys from JS, not the snake_case ones in get_tool_definitions' schema.
+#[tauri::command(rename_all = "snake_case")]
 pub fn search_files(
     path: String,
     pattern: String,
@@ -225,7 +287,8 @@ fn truncate_output(bytes: Vec<u8>) -> String {
     }
 }
 
-#[tauri::command]
+// Same rename_all fix as edit_file above — working_dir is multi-word.
+#[tauri::command(rename_all = "snake_case")]
 pub fn execute_command(command: String, working_dir: Option<String>) -> Result<CommandOutput, String> {
     let mut cmd = if cfg!(target_os = "windows") {
         let mut c = Command::new("cmd");
@@ -317,7 +380,7 @@ pub fn get_tool_definitions() -> serde_json::Value {
             "type": "function",
             "function": {
                 "name": "write_file",
-                "description": "Write text content to a file on disk, creating it if it doesn't exist or overwriting it if it does.",
+                "description": "Write text content to a file on disk, creating it if it doesn't exist or fully overwriting it if it does. Prefer edit_file instead when changing part of an existing file — a full overwrite discards any content you didn't include, including changes made by something else since you last read the file.",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -325,6 +388,23 @@ pub fn get_tool_definitions() -> serde_json::Value {
                         "content": {"type": "string", "description": "Full text content to write"}
                     },
                     "required": ["path", "content"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "edit_file",
+                "description": "Make a targeted edit to an existing text file by replacing an exact snippet (old_string) with new text (new_string), instead of rewriting the whole file. old_string must match the file's current content exactly, including whitespace, and must be unique in the file unless replace_all is set — include enough surrounding context (a few lines) to make it unique. Prefer this over write_file whenever you're changing part of a file rather than creating one from scratch.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {"type": "string", "description": "Absolute path to the file to edit"},
+                        "old_string": {"type": "string", "description": "Exact text to find, with enough context to be unique in the file"},
+                        "new_string": {"type": "string", "description": "Text to replace old_string with"},
+                        "replace_all": {"type": "boolean", "description": "Replace every occurrence of old_string instead of requiring exactly one match. Defaults to false."}
+                    },
+                    "required": ["path", "old_string", "new_string"]
                 }
             }
         },
@@ -376,4 +456,71 @@ pub fn get_tool_definitions() -> serde_json::Value {
             }
         }
     ])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_file(name: &str, contents: &str) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!("edit_file_test_{}_{name}", std::process::id()));
+        fs::write(&path, contents).unwrap();
+        path
+    }
+
+    #[test]
+    fn edit_file_replaces_unique_match() {
+        let path = temp_file("unique.txt", "hello world\nsecond line\n");
+        let result = edit_file(
+            path.display().to_string(),
+            "hello world".to_string(),
+            "goodbye world".to_string(),
+            None,
+        );
+        let contents = fs::read_to_string(&path).unwrap();
+        fs::remove_file(&path).ok();
+        assert!(result.is_ok());
+        assert_eq!(contents, "goodbye world\nsecond line\n");
+    }
+
+    #[test]
+    fn edit_file_errors_when_old_string_not_found() {
+        let path = temp_file("missing.txt", "hello world\n");
+        let result = edit_file(
+            path.display().to_string(),
+            "not present".to_string(),
+            "x".to_string(),
+            None,
+        );
+        fs::remove_file(&path).ok();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn edit_file_errors_on_ambiguous_match_without_replace_all() {
+        let path = temp_file("dup.txt", "foo\nfoo\n");
+        let result = edit_file(
+            path.display().to_string(),
+            "foo".to_string(),
+            "bar".to_string(),
+            None,
+        );
+        fs::remove_file(&path).ok();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn edit_file_replace_all_replaces_every_match() {
+        let path = temp_file("dup_all.txt", "foo\nfoo\n");
+        let result = edit_file(
+            path.display().to_string(),
+            "foo".to_string(),
+            "bar".to_string(),
+            Some(true),
+        );
+        let contents = fs::read_to_string(&path).unwrap();
+        fs::remove_file(&path).ok();
+        assert!(result.is_ok());
+        assert_eq!(contents, "bar\nbar\n");
+    }
 }

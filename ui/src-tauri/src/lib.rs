@@ -1,4 +1,5 @@
 mod commands;
+mod mcp;
 mod skills;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -39,6 +40,45 @@ fn extend_frame_into_client_area(window: &WebviewWindow) {
     };
     unsafe {
         let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
+    }
+}
+
+// New attempt (2026-08-15) at the still-open Mica investigation (see
+// docs/Kanban.md). DwmSetWindowAttribute(DWMWA_SYSTEMBACKDROP_TYPE, ...)
+// (inside window_vibrancy::apply_mica, called right after this) only
+// requests the backdrop — on a window that's already created/mapped, DWM
+// doesn't always repaint its non-client frame just because the attribute
+// changed. SWP_FRAMECHANGED is the documented signal for "the window's
+// frame characteristics changed, recompute it" without actually moving,
+// resizing, reordering, or stealing focus from the window (all the other
+// SWP_NO* flags exist specifically to make this a no-op geometry-wise).
+// Ruled out first: the previously-logged "next lead" (WebView2's own
+// compositor background) turned out to already be handled automatically —
+// wry sets ICoreWebView2Controller2::SetDefaultBackgroundColor to fully
+// transparent (0,0,0,0) whenever tauri.conf.json has "transparent": true,
+// which this app's config already does (confirmed by reading wry 0.55.1's
+// own source, not assumed).
+#[cfg(target_os = "windows")]
+fn force_dwm_frame_recalc(window: &WebviewWindow) {
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        SetWindowPos, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+    };
+
+    let Ok(handle) = window.window_handle() else { return };
+    let RawWindowHandle::Win32(win32_handle) = handle.as_raw() else { return };
+    let hwnd = HWND(win32_handle.hwnd.get() as *mut _);
+    unsafe {
+        let _ = SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            0,
+            0,
+            SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE,
+        );
     }
 }
 
@@ -132,6 +172,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
         .manage(AlwaysOnTop(AtomicBool::new(false)))
+        .manage(mcp::McpState::new())
         .setup(|app| {
             let window = app
                 .get_webview_window("main")
@@ -149,6 +190,9 @@ pub fn run() {
             if window_vibrancy::apply_mica(&window, None).is_err() {
                 let _ = window_vibrancy::apply_acrylic(&window, None);
             }
+
+            #[cfg(target_os = "windows")]
+            force_dwm_frame_recalc(&window);
 
             // Half-screen default size instead of the fixed 460x640 in
             // tauri.conf.json (kept there as a min-size safety rail for
@@ -212,10 +256,14 @@ pub fn run() {
             commands::read_theme_pack,
             skills::read_file,
             skills::write_file,
+            skills::edit_file,
             skills::list_directory,
             skills::search_files,
             skills::execute_command,
-            skills::get_tool_definitions
+            skills::get_tool_definitions,
+            mcp::mcp_connect,
+            mcp::mcp_disconnect,
+            mcp::mcp_call_tool
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

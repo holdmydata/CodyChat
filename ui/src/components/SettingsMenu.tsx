@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { ThemePickerMenu } from './ThemePicker';
+import { McpServers } from './McpServers';
 import { RISK_LABEL, riskOf } from '../lib/toolConfig';
 import type { ToolDefinition } from '../lib/skills';
+import type { McpServerConfig } from '../lib/mcp';
+import type { McpServerStatus } from '../hooks/useMcpServers';
 
 interface SettingsMenuProps {
   baseUrl: string;
@@ -13,6 +16,12 @@ interface SettingsMenuProps {
   tools: ToolDefinition[];
   disabledTools: Set<string>;
   onToggleTool: (name: string) => void;
+  mcpServers: McpServerConfig[];
+  mcpStatusById: Record<string, McpServerStatus>;
+  onAddMcpServer: (config: Omit<McpServerConfig, 'id'>) => void;
+  onRemoveMcpServer: (id: string) => void;
+  onConnectMcpServer: (id: string) => void;
+  onDisconnectMcpServer: (id: string) => void;
 }
 
 type Tab = 'theme' | 'general' | 'tools';
@@ -37,6 +46,12 @@ export function SettingsMenu({
   tools,
   disabledTools,
   onToggleTool,
+  mcpServers,
+  mcpStatusById,
+  onAddMcpServer,
+  onRemoveMcpServer,
+  onConnectMcpServer,
+  onDisconnectMcpServer,
 }: SettingsMenuProps) {
   const [tab, setTab] = useState<Tab>('theme');
 
@@ -133,10 +148,14 @@ export function SettingsMenu({
                 })}
               </div>
             )}
-            <div className="settings-menu__placeholder">
-              <strong>MCP connectors</strong> — connecting external MCP servers as additional tool sources is
-              planned but not wired up yet.
-            </div>
+            <McpServers
+              servers={mcpServers}
+              statusById={mcpStatusById}
+              onAdd={onAddMcpServer}
+              onRemove={onRemoveMcpServer}
+              onConnect={onConnectMcpServer}
+              onDisconnect={onDisconnectMcpServer}
+            />
           </section>
         )}
       </div>

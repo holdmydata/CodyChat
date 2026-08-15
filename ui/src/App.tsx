@@ -8,6 +8,7 @@ import { ThemePicker } from './components/ThemePicker';
 import { SettingsMenu } from './components/SettingsMenu';
 import { useConversations } from './hooks/useConversations';
 import { useChat } from './hooks/useChat';
+import { useMcpServers } from './hooks/useMcpServers';
 import {
   applyThemePack,
   BUILTIN_THEMES,
@@ -52,6 +53,8 @@ function App() {
       .then(setToolDefs)
       .catch((err) => console.error('getToolDefinitions failed:', err));
   }, []);
+
+  const mcp = useMcpServers();
 
   const [disabledTools, setDisabledTools] = useState<Set<string>>(loadDisabledTools);
   const toggleTool = useCallback((name: string) => {
@@ -137,6 +140,7 @@ function App() {
     conversation: active,
     onMessagesChange: setMessages,
     disabledTools,
+    mcpTools: mcp.mcpToolDefs,
   });
 
   const handleSend = useCallback(
@@ -200,6 +204,12 @@ function App() {
             tools={toolDefs}
             disabledTools={disabledTools}
             onToggleTool={toggleTool}
+            mcpServers={mcp.servers}
+            mcpStatusById={mcp.statusById}
+            onAddMcpServer={mcp.addServer}
+            onRemoveMcpServer={mcp.removeServer}
+            onConnectMcpServer={mcp.connect}
+            onDisconnectMcpServer={mcp.disconnect}
           />
         ) : (
           <>

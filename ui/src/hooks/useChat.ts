@@ -30,6 +30,8 @@ interface UseChatArgs {
   onMessagesChange: (id: string, messages: Message[]) => void;
   /** Tool names to strip from the `tools` list sent to Ollama — see Settings → Tools. */
   disabledTools?: Set<string>;
+  /** Tool defs from currently-connected MCP servers, merged alongside the built-in skills. */
+  mcpTools?: ToolDefinition[];
 }
 
 function toWireMessages(messages: Pick<Message, 'role' | 'content' | 'toolCalls' | 'toolCallId'>[]): WireMessage[] {
@@ -43,7 +45,7 @@ function toWireMessages(messages: Pick<Message, 'role' | 'content' | 'toolCalls'
   }));
 }
 
-export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools }: UseChatArgs) {
+export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools, mcpTools }: UseChatArgs) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingToolCall, setPendingToolCall] = useState<ToolCall | null>(null);
@@ -145,9 +147,10 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
         let assembledThinking = '';
         let toolCalls: ToolCall[] | null = null;
 
-        const activeTools = toolsRef.current?.filter(
-          (t) => !disabledTools?.has(t.function.name)
-        );
+        const activeTools = [
+          ...(toolsRef.current?.filter((t) => !disabledTools?.has(t.function.name)) ?? []),
+          ...(mcpTools ?? []),
+        ];
 
         await streamChat({
           baseUrl,
@@ -248,7 +251,7 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
         abortRef.current = null;
       }
     },
-    [baseUrl, conversation, onMessagesChange, requestApproval, isStreaming, disabledTools]
+    [baseUrl, conversation, onMessagesChange, requestApproval, isStreaming, disabledTools, mcpTools]
   );
 
   return {

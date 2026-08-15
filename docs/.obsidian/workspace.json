@@ -11,20 +11,14 @@
             "id": "f34e4487346d7303",
             "type": "leaf",
             "state": {
-              "type": "kanban",
+              "type": "markdown",
               "state": {
-                "file": "Kanban.md",
-                "kanbanViewState": {
-                  "kanban-plugin": "board",
-                  "list-collapse": [
-                    null,
-                    null,
-                    null
-                  ]
-                }
+                "file": "test.md",
+                "mode": "source",
+                "source": false
               },
-              "icon": "lucide-trello",
-              "title": "Kanban"
+              "icon": "lucide-file",
+              "title": "test"
             }
           }
         ]
@@ -86,8 +80,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300,
-    "collapsed": true
+    "width": 300
   },
   "right": {
     "id": "0547de615f8b2fdc",
@@ -195,20 +188,21 @@
   },
   "active": "f34e4487346d7303",
   "lastOpenFiles": [
-    "MEMORY.md.tmp.5480.5c7465ecf542",
-    "Kanban.md.tmp.5480.1890d20ecfc2",
-    "Kanban.md.tmp.5480.71b11424dedc",
-    "Kanban.md.tmp.5480.3ad55667bf4c",
-    "Kanban.md.tmp.1904.43c02043a598",
-    "Kanban.md.tmp.1904.96d4b6fe5a8f",
-    "Kanban.md.tmp.1904.feb052f482c4",
-    "Architecture/Frontend.md.tmp.1904.3978cbac07f1",
-    "Kanban.md.tmp.1904.9bbe0a9a28c5",
-    "Kanban.md.tmp.1904.6fab4d57a83d",
-    "Kanban.md.tmp.1904.082f8141cddc",
+    "MEMORY.md.tmp.16152.7f82d87038e3",
+    "Kanban.md.tmp.16152.6a511459459a",
+    "Kanban.md.tmp.16152.aa8fcd710b6b",
+    "Kanban.md.tmp.16152.41503bef1c82",
+    "MEMORY.md.tmp.16152.54de0091aa95",
+    "Kanban.md.tmp.16152.2a3d0b57024d",
+    "MEMORY.md.tmp.16152.61eba3d46a55",
+    "Kanban.md.tmp.16152.20bea1472cae",
+    "Kanban.md.tmp.16152.63dd9827fa8a",
+    "Kanban.md",
+    "Kanban.md.tmp.16152.b20b5fae8908",
+    "MEMORY.md.tmp.16152.f4394e3f1ebb",
+    "test.md",
     "Session-Summary-2026-08-14.md",
     "Untitled Kanban.md",
-    "Kanban.md",
     "Architecture/Frontend.md",
     "未命名.canvas",
     "Timeline.md",

@@ -108,6 +108,10 @@
   text-align: left;
 }
 
+.sidebar__new:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .sidebar__list {
   list-style: none;
   margin: 0;
@@ -196,6 +200,11 @@
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text-h);
+  cursor: pointer;
+}
+
+.model-picker:hover {
+  border-color: var(--accent-border);
 }
 
 .model-picker--error {
@@ -210,6 +219,11 @@
   background: var(--bg);
   color: var(--text);
   cursor: pointer;
+}
+
+.chat-window__settings-toggle:hover {
+  border-color: var(--accent-border);
+  color: var(--text-h);
 }
 
 .chat-window__messages-wrap {
@@ -337,6 +351,10 @@
   font-size: 13px;
 }
 
+.settings-panel__save-model-row button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .settings-panel__save-model-row button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
@@ -365,6 +383,10 @@
   border-radius: 10px;
   align-self: flex-start;
   background: var(--assistant-bubble);
+  /* Subtle depth — bubbles previously sat perfectly flat against the
+     background, which read flat/dated next to the glass panel shadows
+     used elsewhere (theme picker popover, jump-to-bottom pill). */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 1px 1px rgba(0, 0, 0, 0.04);
 }
 
 .message--user {
@@ -507,19 +529,44 @@
 /* Tool approval prompt */
 
 .tool-approval {
-  padding: 12px 16px;
+  padding: 10px 16px;
   border-top: 1px solid var(--accent-border);
   background: var(--accent-bg);
 }
 
-.tool-approval__text {
+/* Badge, tool name, and Approve/Deny now share one row — previously the
+   badge sat alone above the text and the actions sat in their own row
+   below the args, so approving/denying even a no-args call cost three
+   stacked rows of vertical space. */
+.tool-approval__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.tool-approval__title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   font-size: 13px;
   color: var(--text-h);
-  margin-bottom: 8px;
+}
+
+.tool-approval__call {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-approval__body {
+  margin-top: 8px;
 }
 
 .tool-approval__args {
-  margin: 6px 0 0;
+  margin: 0;
   padding: 8px 10px;
   background: var(--code-bg);
   border-radius: 6px;
@@ -532,8 +579,8 @@
 
 .tool-approval__actions {
   display: flex;
-  justify-content: flex-end;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .tool-approval__approve,
@@ -551,14 +598,23 @@
   color: var(--bg);
 }
 
+.tool-approval__approve:hover {
+  filter: brightness(1.08);
+}
+
 .tool-approval__deny {
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
 }
 
+.tool-approval__deny:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
 .tool-approval__args-summary {
-  margin: 6px 0 0;
+  margin: 0;
   padding: 0;
   list-style: none;
   font-size: 12px;
@@ -593,13 +649,13 @@
 
 .tool-approval__risk-badge {
   display: inline-block;
+  flex-shrink: 0;
   padding: 2px 8px;
   border-radius: 999px;
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  margin-bottom: 6px;
 }
 
 .tool-approval__risk-badge--read {
@@ -617,77 +673,87 @@
   color: var(--danger);
 }
 
-/* Activity tracker — a step-by-step progress list. Each step is a
-   collapsed-by-default title button (status icon + tool name); expanding
-   it reveals args/result inline, wrapping within the button rather than
-   overflowing. .activity-tracker--log reuses the exact same step markup
-   inside a message bubble (persisted log), with no border/background of
-   its own — the bubble already provides those. */
+/* Turn flow graph (ActivityTracker.tsx::TurnFlowGraph) — a single turn's
+   thinking/tool-call activity as a horizontal chain of connected nodes
+   rather than a vertical checklist. --live is the panel shown below the
+   message list while a response streams (own chrome: border/background,
+   capped height, auto-follows the newest node). --log is the recap
+   embedded inside a finished message bubble's collapsed "Activity log"
+   toggle — no chrome of its own, the bubble already provides it, and
+   nothing is selected until clicked. */
 
-.activity-tracker {
+.turn-flow--live {
   padding: 10px 16px;
   border-top: 1px solid var(--border);
   background: var(--bg-alt);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  max-height: 160px;
+  max-height: 200px;
   overflow-y: auto;
 }
 
-.activity-tracker--log {
-  padding: 4px 0 0;
-  border-top: none;
-  background: none;
-  max-height: none;
-  overflow: visible;
+.turn-flow--log {
+  padding-top: 4px;
 }
 
-.activity-tracker__step-wrapper {
-  position: relative;
-  width: 100%;
+.turn-flow__chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 2px;
 }
 
-.activity-tracker__step-title {
+.turn-flow__item {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.turn-flow__connector {
+  color: var(--border);
+  font-size: 12px;
+  padding: 0 2px;
+}
+
+.turn-flow__node {
+  display: inline-flex;
+  align-items: center;
   gap: 6px;
-  max-width: 100%;
-  padding: 4px 8px;
-  border-radius: 6px;
+  padding: 4px 9px;
+  border-radius: 999px;
   cursor: pointer;
   font-size: 12px;
   background: var(--bg);
   border: 1px solid var(--border);
-  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
-.activity-tracker__step-title:hover {
+.turn-flow__node:hover {
   background: var(--bg-alt);
 }
 
-.activity-tracker__step-title--expanded {
+.turn-flow__node--selected {
   background: var(--accent-bg);
   border-color: var(--accent-border);
 }
 
+.turn-flow__node--thinking {
+  font-style: italic;
+}
+
 /* Waiting on the user — dashed ring reads as "paused, needs input". */
-.activity-tracker__step-title--pending_approval {
+.turn-flow__node--pending_approval {
   border-style: dashed;
 }
 
-/* In-progress step: accent border + pulsing icon so the active step
-   reads at a glance. */
-.activity-tracker__step-title--running {
+/* In-progress node: accent border + pulsing icon so the active step reads
+   at a glance in the live chain. */
+.turn-flow__node--running {
   border-color: var(--accent-border);
 }
 
-.activity-tracker__step-title--running .activity-tracker__status-icon {
-  animation: activity-tracker-pulse 1.6s ease-in-out infinite;
+.turn-flow__node--running .turn-flow__node-icon {
+  animation: turn-flow-pulse 1.6s ease-in-out infinite;
 }
 
-@keyframes activity-tracker-pulse {
+@keyframes turn-flow-pulse {
   0%,
   100% {
     opacity: 1;
@@ -698,62 +764,47 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .activity-tracker__step-title--running .activity-tracker__status-icon {
+  .turn-flow__node--running .turn-flow__node-icon {
     animation: none;
   }
 }
 
-.activity-tracker__step-title--error,
-.activity-tracker__step-title--denied {
+.turn-flow__node--error,
+.turn-flow__node--denied {
   border-color: var(--danger);
 }
 
-.activity-tracker__step-title--done {
-  opacity: 0.75;
+.turn-flow__node--done {
+  opacity: 0.8;
 }
 
-.activity-tracker__status-icon {
+.turn-flow__node-icon {
   flex-shrink: 0;
   font-size: 13px;
   line-height: 1;
 }
 
-.activity-tracker__tool {
+.turn-flow__node-label {
   font-family: var(--mono);
-  font-size: 12px;
   color: var(--text-h);
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.activity-tracker__args {
-  opacity: 0.7;
+.turn-flow__detail {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--code-bg);
   font-size: 11px;
+  font-family: var(--mono);
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
-}
-
-/* Separator chevron that appears when expanded */
-.activity-tracker__separator {
-  display: inline-block;
-  font-size: 10px;
-  color: var(--accent);
-  transition: transform 0.15s ease;
-  margin: 2px 4px 0 0;
-}
-
-.activity-tracker__result {
-  opacity: 0.6;
-  font-size: 11px;
-  font-style: italic;
+  max-height: 140px;
+  overflow-y: auto;
   color: var(--text);
-  line-height: 14px;
-  overflow-wrap: anywhere;
-}
-
-.activity-tracker__error {
-  opacity: 0.6;
-  font-size: 11px;
-  font-style: italic;
-  color: var(--danger);
-  display: inline-block;
 }
 
 .message__code {
@@ -843,14 +894,26 @@
   font: inherit;
 }
 
+.message-input__send:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
 .message-input__send:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
 
+.message-input__stop:hover {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
 .message-input__stop {
   border-color: var(--danger);
-  background: rgba(209, 67, 91, 0.1);
+  /* Was a hardcoded rgba() copy of the *light* theme's --danger value, so
+     the background stayed light-theme-red in every other pack (Dark,
+     Psyduck Yellow, any imported pack) while the border correctly tracked
+     the theme — a real per-pack color mismatch, not just a missing var. */
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
 /* Loopx digest */
@@ -1316,4 +1379,177 @@
 .settings-menu__toggle input:focus-visible + .settings-menu__toggle-track {
   outline: 2px solid var(--accent-border);
   outline-offset: 2px;
+}
+
+/* MCP servers panel (Settings → Tools → McpServers.tsx) */
+
+.mcp-servers {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.settings-menu__subheading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.6;
+}
+
+.mcp-servers__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mcp-servers__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mcp-servers__row:last-child {
+  border-bottom: none;
+}
+
+.mcp-servers__info {
+  min-width: 0;
+  flex: 1;
+}
+
+.mcp-servers__name-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.mcp-servers__name {
+  font-weight: 600;
+}
+
+.mcp-servers__status {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.mcp-servers__status--connected {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.mcp-servers__status--error {
+  color: var(--danger);
+  opacity: 1;
+}
+
+.mcp-servers__command {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-family: var(--mono);
+  opacity: 0.6;
+  overflow-wrap: anywhere;
+}
+
+.mcp-servers__error {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--danger);
+  background: color-mix(in srgb, var(--danger) 10%, var(--accent-bg));
+  color: var(--danger);
+  font-size: 11px;
+  font-family: var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.mcp-servers__tool-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mcp-servers__tool-list li {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
+.mcp-servers__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.mcp-servers__actions button {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.mcp-servers__actions button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+}
+
+.mcp-servers__actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mcp-servers__remove {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+.mcp-servers__remove:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  border-color: var(--danger);
+}
+
+.mcp-servers__add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.mcp-servers__add button {
+  align-self: flex-start;
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.mcp-servers__add button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.mcp-servers__add button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }

@@ -14,6 +14,11 @@
   --danger: #d1435b;
   --user-bubble: rgba(240, 234, 255, 0.85);
   --assistant-bubble: rgba(247, 246, 249, 0.85);
+  /* Solid (alpha 1) — used only as the html/body/#root floor below, never
+     by a panel. Every panel color above stays translucent on purpose (see
+     that comment) for whenever Mica actually renders; this is the color
+     that shows through them *today*, while it doesn't. */
+  --root-bg: #f7f6f9;
 
   --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
   --mono: ui-monospace, Consolas, monospace;
@@ -46,6 +51,7 @@
     --danger: #f0708a;
     --user-bubble: rgba(42, 35, 64, 0.85);
     --assistant-bubble: rgba(28, 29, 36, 0.85);
+    --root-bg: #1c1d24;
   }
 }
 
@@ -58,12 +64,16 @@ body,
 #root {
   height: 100%;
   margin: 0;
-  /* Required for window-vibrancy's Mica/Acrylic to composite at all — the
-     root must be genuinely transparent (alpha 0), not just a translucent
-     color. The frosted look comes from the panel-level --bg/--bg-alt
-     colors (titlebar, sidebar, message bubbles, etc.) sitting on top of
-     this transparent base, not from the base itself. */
-  background: transparent;
+  /* Was `transparent`, on the assumption window-vibrancy's Mica/Acrylic
+     would composite a real blurred backdrop behind it — see the still-open
+     investigation in docs/Kanban.md. It doesn't render yet, so a
+     transparent root was showing raw black/grey nothing behind every
+     panel in every theme (user-confirmed live, 2026-08-15: "background is
+     still grey"). --root-bg is a solid (alpha 1) theme-aware floor color,
+     separate from the translucent --bg/--bg-alt panel colors, which stay
+     untouched and glass-ready. Revert this one line to `transparent` once
+     Mica is confirmed actually compositing. */
+  background: var(--root-bg);
 }
 
 body {
@@ -73,4 +83,114 @@ body {
 code,
 pre {
   font-family: var(--mono);
+}
+
+/* Scrollbars — default OS scrollbars read as a dated gray rectangle against
+   the frosted-glass panels; a slim theme-colored thumb matches everything
+   else that reads from the CSS variables instead. Webkit-only (Tauri's
+   webview is Chromium/WebView2-based), no functional loss on other
+   engines, just the OS default there. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text);
+}
+
+/* One keyboard-focus ring for every interactive element — most controls
+   across the app had no focus style at all beyond the invisible browser
+   default, easy to miss against a custom-chrome frameless window. */
+:focus-visible {
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease,
+    transform 0.1s ease;
+}
+
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+input[type='text'],
+input[type='search'],
+textarea,
+select {
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+input[type='text']:focus,
+input[type='search']:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* Range sliders (Settings → temperature / top P / context length) were
+   fully unstyled — raw OS defaults are the single most dated-looking
+   control in the app next to everything else reading from the theme. */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+  transition: transform 0.1s ease;
+}
+
+input[type='range']::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  cursor: pointer;
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
 }

@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { callMcpTool, parseMcpToolName } from './mcp';
 import type { ToolCall } from '../types';
 
 export interface ToolDefinition {
@@ -39,12 +40,18 @@ interface CommandOutput {
 // to have already gated this behind user approval — this function doesn't
 // know or care whether that happened, same as skills.rs on the Rust side.
 export async function executeSkill(call: ToolCall): Promise<string> {
+  const mcpRef = parseMcpToolName(call.name);
+  if (mcpRef) {
+    return callMcpTool(mcpRef.serverId, mcpRef.toolName, call.arguments);
+  }
   switch (call.name) {
     case 'read_file':
       return invoke<string>('read_file', call.arguments);
     case 'write_file':
       await invoke('write_file', call.arguments);
       return 'File written successfully.';
+    case 'edit_file':
+      return invoke<string>('edit_file', call.arguments);
     case 'list_directory': {
       const entries = await invoke<DirEntryInfo[]>('list_directory', call.arguments);
       return JSON.stringify(entries);

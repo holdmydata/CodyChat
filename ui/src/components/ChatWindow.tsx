@@ -6,7 +6,7 @@ import { SettingsPanel } from './SettingsPanel';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { ToolApprovalPrompt } from './ToolApprovalPrompt';
-import { ActivityTracker } from './ActivityTracker';
+import { TurnFlowGraph } from './ActivityTracker';
 
 interface ChatWindowProps {
   conversation: Conversation;
@@ -137,7 +137,7 @@ export function ChatWindow({
         )}
       </div>
 
-      {isStreaming && <ActivityTracker steps={activitySteps} />}
+      {isStreaming && <TurnFlowGraph steps={activitySteps} variant="live" />}
 
       {pendingToolCall && (
         <ToolApprovalPrompt call={pendingToolCall} onApprove={onApproveToolCall} onDeny={onDenyToolCall} />
