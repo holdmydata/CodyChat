@@ -14,6 +14,8 @@ export interface WireMessage {
   role: string;
   content: string;
   tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[];
+  /** Present on 'tool' role messages — links a result back to the call it answers. */
+  tool_call_id?: string;
 }
 
 export interface StreamChatArgs {
@@ -126,7 +128,19 @@ export async function streamChat({
   });
 
   if (!res.ok || !res.body) {
-    throw new OllamaError(`Chat request failed: ${res.status} ${res.statusText}`);
+    // Ollama's error responses carry real detail (e.g. a chat-template
+    // rendering failure from context overflow) — surface it instead of a
+    // bare status code, which gives no signal on what actually went wrong.
+    const bodyText = await res.text().catch(() => '');
+    let detail = bodyText;
+    try {
+      const parsed = JSON.parse(bodyText);
+      detail = typeof parsed.error === 'string' ? parsed.error : (parsed.error?.message ?? bodyText);
+    } catch {
+      // not JSON — fall back to raw body text
+    }
+    const hint = res.status === 500 ? ' (often means the conversation is too large for the context window — try a new conversation or raising context length in Settings)' : '';
+    throw new OllamaError(`Chat request failed: ${res.status} ${res.statusText}${detail ? ` — ${detail}` : ''}${hint}`);
   }
 
   const reader = res.body.getReader();

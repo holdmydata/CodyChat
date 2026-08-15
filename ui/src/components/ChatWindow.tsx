@@ -46,14 +46,23 @@ export function ChatWindow({
   const scrollRef = useRef<HTMLDivElement>(null);
   // Only auto-follow new content if the user is already near the bottom —
   // otherwise streaming tokens/thinking updates yank them back down every
-  // time they try to scroll up and read earlier messages mid-response.
+  // time they try to scroll up and read earlier messages mid-response. The
+  // ref is the source of truth read synchronously by the scroll handler and
+  // the auto-scroll effect; autoScroll (state) mirrors it purely so the
+  // "jump to latest" button can react to it.
   const shouldAutoScrollRef = useRef(true);
+  const [autoScroll, setAutoScroll] = useState(true);
+
+  const setAutoScrollValue = (value: boolean) => {
+    shouldAutoScrollRef.current = value;
+    setAutoScroll(value);
+  };
 
   const handleMessagesScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    shouldAutoScrollRef.current = distanceFromBottom < 60;
+    setAutoScrollValue(distanceFromBottom < 60);
   };
 
   useEffect(() => {
@@ -63,12 +72,17 @@ export function ChatWindow({
   }, [conversation.messages]);
 
   useEffect(() => {
-    shouldAutoScrollRef.current = true;
+    setAutoScrollValue(true);
   }, [conversation.id]);
 
   const handleSend = (content: string) => {
-    shouldAutoScrollRef.current = true;
+    setAutoScrollValue(true);
     onSend(content);
+  };
+
+  const jumpToBottom = () => {
+    setAutoScrollValue(true);
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   };
 
   return (
@@ -101,18 +115,29 @@ export function ChatWindow({
         />
       )}
 
-      <div className="chat-window__messages" ref={scrollRef} onScroll={handleMessagesScroll}>
-        {conversation.messages.length === 0 && (
-          <div className="chat-window__empty">Say something to get started.</div>
+      <div className="chat-window__messages-wrap">
+        <div className="chat-window__messages" ref={scrollRef} onScroll={handleMessagesScroll}>
+          {conversation.messages.length === 0 && (
+            <div className="chat-window__empty">Say something to get started.</div>
+          )}
+          {conversation.messages.map((m, i) => (
+            <MessageBubble
+              key={m.id}
+              message={m}
+              isStreaming={isStreaming && i === conversation.messages.length - 1}
+            />
+          ))}
+          {error && <div className="chat-window__error">{error}</div>}
+        </div>
+        {!autoScroll && (
+          <button
+            type="button"
+            className="chat-window__jump-to-bottom"
+            onClick={jumpToBottom}
+          >
+            ↓ Jump to latest
+          </button>
         )}
-        {conversation.messages.map((m, i) => (
-          <MessageBubble
-            key={m.id}
-            message={m}
-            isStreaming={isStreaming && i === conversation.messages.length - 1}
-          />
-        ))}
-        {error && <div className="chat-window__error">{error}</div>}
       </div>
 
       {isStreaming && <ActivityTracker steps={activitySteps} />}

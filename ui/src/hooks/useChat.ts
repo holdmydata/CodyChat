@@ -18,13 +18,14 @@ interface UseChatArgs {
   onMessagesChange: (id: string, messages: Message[]) => void;
 }
 
-function toWireMessages(messages: Pick<Message, 'role' | 'content' | 'toolCalls'>[]): WireMessage[] {
+function toWireMessages(messages: Pick<Message, 'role' | 'content' | 'toolCalls' | 'toolCallId'>[]): WireMessage[] {
   return messages.map((m) => ({
     role: m.role,
     content: m.content,
     ...(m.toolCalls?.length
       ? { tool_calls: m.toolCalls.map((tc) => ({ function: { name: tc.name, arguments: tc.arguments } })) }
       : {}),
+    ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}),
   }));
 }
 

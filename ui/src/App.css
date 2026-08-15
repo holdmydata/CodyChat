@@ -197,6 +197,13 @@
   cursor: pointer;
 }
 
+.chat-window__messages-wrap {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
 .chat-window__messages {
   flex: 1;
   overflow-y: auto;
@@ -204,6 +211,22 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.chat-window__jump-to-bottom {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .chat-window__empty {
@@ -542,50 +565,145 @@
   text-decoration: underline;
 }
 
-/* Activity tracker */
+/* Activity tracker — a step-by-step progress list: each step is a node on
+   a vertical timeline, with a connector line running from node to node.
+   .activity-tracker--log reuses the same step markup inside a message
+   bubble (persisted log) with no border/background of its own. */
 
 .activity-tracker {
-  padding: 8px 16px;
+  padding: 10px 16px;
   border-top: 1px solid var(--border);
   background: var(--bg-alt);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  max-height: 140px;
+  gap: 6px;
+  max-height: 160px;
   overflow-y: auto;
 }
 
 .activity-tracker__step {
+  position: relative;
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 6px;
   font-size: 12px;
-  flex-wrap: wrap;
+  /* The -8px margin / 8px padding pair lets the in-progress highlight bleed
+     into the container's padding while keeping every step's node aligned. */
+  padding: 3px 8px;
+  margin: 0 -8px;
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+
+/* Connector line from this step's node down to the next one. Geometry
+   assumes the 18px node, 3px vertical padding and 6px row gap: top 21px =
+   3px + 18px, bottom -9px = -(6px + 3px), left 16px = 8px + 9px - 1px. */
+.activity-tracker__step::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 21px;
+  bottom: -9px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--border);
+  z-index: 1;
+}
+
+.activity-tracker__step:last-child::before {
+  content: none;
+}
+
+/* Tint the connector by the status of the step it leaves: active steps
+   flow accent, failed/declined steps flow danger, finished ones stay
+   neutral. */
+.activity-tracker__step--running::before {
+  background: var(--accent);
+}
+
+.activity-tracker__step--error::before,
+.activity-tracker__step--denied::before {
+  background: var(--danger);
 }
 
 .activity-tracker__icon {
   flex-shrink: 0;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--bg);
+  font-size: 11px;
+  line-height: 1;
+}
+
+/* Waiting on the user — dashed ring reads as "paused, needs input". */
+.activity-tracker__step--pending_approval .activity-tracker__icon {
+  border-style: dashed;
 }
 
 .activity-tracker__tool {
   font-family: var(--mono);
   font-size: 12px;
+  line-height: 18px; /* matches the node height so text centers on it */
+  color: var(--text-h);
 }
 
 .activity-tracker__args {
   opacity: 0.7;
   font-size: 11px;
+  line-height: 18px;
 }
 
 .activity-tracker__result {
   opacity: 0.6;
   font-size: 11px;
   font-style: italic;
+  line-height: 18px;
+}
+
+/* In-progress step: accent pill + pulsing node so the active step reads
+   at a glance. */
+.activity-tracker__step--running {
+  background: var(--accent-bg);
+  color: var(--text-h);
+}
+
+.activity-tracker__step--running .activity-tracker__icon {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+  animation: activity-tracker-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes activity-tracker-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .activity-tracker__step--running .activity-tracker__icon {
+    animation: none;
+  }
 }
 
 .activity-tracker__step--denied,
 .activity-tracker__step--error {
-  color: var(--danger, #e5484d);
+  color: var(--danger);
+}
+
+.activity-tracker__step--error .activity-tracker__icon,
+.activity-tracker__step--denied .activity-tracker__icon {
+  border-color: var(--danger);
 }
 
 .activity-tracker__step--done {

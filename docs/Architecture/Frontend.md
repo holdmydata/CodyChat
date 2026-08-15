@@ -108,6 +108,22 @@ Surfaced by the same session that hit the 6-call safety cap asking the model for
 
 `tsc --noEmit` clean, pure frontend, hot-reloads in the running dev instance. Not yet manually re-verified.
 
+### 500 mid-dogfood diagnosed: context overflow, not a wire-format bug (Phase 3, 2026-08-14)
+
+Hit live during the ActivityTracker.tsx restyle dogfood test (reading `App.css` on top of an already-substantial conversation): `Chat request failed: 500 Internal Server Error`, with no further detail surfaced in the UI.
+
+**Diagnosed via the actual Ollama server log** (`%LOCALAPPDATA%\Ollama\server.log`), not guessed — same investigative pattern as the earlier "stuck on Thinking forever" bug. Found the real error: `srv operator(): got exception... Jinja Exception: No user query found in messages` — the model's own chat template (Qwen-family tool-calling templates commonly scan backward through messages for the last real user turn) raised a hard validation exception rather than silently degrading. The request immediately before the failure was already `n_tokens = 6386` of `n_ctx_slot = 8192` (~78% full, `n_keep = 4` — almost nothing preserved on a trim); the next request's added content plausibly pushed Ollama's context-fitting logic to trim the original user message out of what the template ever saw. **Same root cause class as the earlier context-truncation bug** — this model/template just fails loudly instead of silently going blank.
+
+**Ruled out a real alternative hypothesis before settling on this one:** initially suspected the wire format was missing `tool_call_id` (confirmed true — `Message.toolCallId` existed but `toWireMessages` silently dropped it, sending bare `{role: "tool", content: "..."}` with nothing linking a result to its call). Tested this directly against the live Ollama instance via `curl` with several reproductions closely matching the real scenario — sequential tool-call rounds, five rounds deep, and multiple tool calls returned in a single assistant turn (parallel calls, the case most likely to need an ID for disambiguation) — **none reproduced the 500**, which is what pointed back to context size as the actual driver rather than message shape.
+
+**Fixed two things regardless:**
+1. `WireMessage` gained `tool_call_id`; `toWireMessages` now includes it for tool-role messages. A genuine correctness gap independent of whether it caused this specific incident.
+2. `streamChat` (`lib/ollama.ts`) now reads and surfaces Ollama's actual error response on failure (parses `error`/`error.message` from JSON, falls back to raw text) instead of throwing a bare status code, plus appends a context-overflow hint specifically on 500s. The next time this happens, the UI will say something actionable instead of a generic "500 Internal Server Error."
+
+Practical mitigation for the user in the meantime: start a fresh conversation or raise context length in Settings before dogfood turns that read large files. Also reinforces the already-backlogged search/grep-tool idea — full-file reads burn context fast, and this is a second, independent reason (not just `read_file`'s byte cap) to prefer targeted excerpts over whole-file reads once a real search tool exists.
+
+`tsc --noEmit` clean. Not yet manually re-verified live.
+
 ### Real shell built (2026-08-14)
 
 Added `src-tauri/` directly to the existing `ui/` project via `tauri init --ci` (identifier `dev.meansquares.shell`) — not a new scaffold, since `ui/`'s React components already are the intended content pane. Tracked under its own loopx goal (`meansquares-shell-goal`, project = `ui/`), separate from the toy's goal.

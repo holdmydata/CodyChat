@@ -16,9 +16,13 @@ export function ActivityTracker({ steps }: ActivityTrackerProps) {
   if (steps.length === 0) return null;
 
   return (
-    <div className="activity-tracker">
+    <div className="activity-tracker" role="list" aria-label="Tool activity">
       {steps.map((step) => (
-        <div key={step.id} className={`activity-tracker__step activity-tracker__step--${step.status}`}>
+        <div
+          key={step.id}
+          role="listitem"
+          className={`activity-tracker__step activity-tracker__step--${step.status}`}
+        >
           <span className="activity-tracker__icon">{STATUS_ICON[step.status]}</span>
           <code className="activity-tracker__tool">{step.toolName}</code>
           <span className="activity-tracker__args">({step.argsSummary})</span>
