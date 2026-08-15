@@ -12,6 +12,18 @@ const makeId = () => crypto.randomUUID();
 // producing a final answer.
 const MAX_TOOL_ITERATIONS = 6;
 
+// Standing behavioral hint, always folded into the system prompt alongside
+// the environment context below. Added after two separate real incidents
+// (an SVG write and a CSS restyle) where the model kept re-attempting the
+// same kind of change speculatively and burned through most of
+// MAX_TOOL_ITERATIONS second-guessing an already-workable result instead of
+// converging — see docs/Architecture/Frontend.md for both cases.
+const AGENT_BEHAVIOR_HINT =
+  'When using tools, work efficiently: make a plan, execute it, and converge on a final answer within a few tool calls. ' +
+  "Avoid re-attempting the same kind of change speculatively or re-litigating an already-successful tool result. If a task is " +
+  'inherently hard to get exactly right in one pass (e.g. hand-drafting detailed visual content like SVG art), do your best ' +
+  'single attempt, briefly note any limitation, and stop rather than looping to perfect it.';
+
 interface UseChatArgs {
   baseUrl: string;
   conversation: Conversation | null;
@@ -113,7 +125,7 @@ export function useChat({ baseUrl, conversation, onMessagesChange }: UseChatArgs
         onMessagesChange(conversation.id, current);
 
         const historyBase = toWireMessages(msgs);
-        const systemParts = [envContextRef.current, conversation.systemPrompt].filter(
+        const systemParts = [AGENT_BEHAVIOR_HINT, envContextRef.current, conversation.systemPrompt].filter(
           (s): s is string => Boolean(s && s.trim())
         );
         const history: WireMessage[] = systemParts.length

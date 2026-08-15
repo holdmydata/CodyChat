@@ -57,6 +57,14 @@ function ThinkingBreakout({ thinking, stillThinking }: { thinking: string; still
 // Persists the ActivityTracker's live checklist onto the message that
 // concludes a turn, so the step-by-step log doesn't vanish once streaming
 // ends — the live tracker only exists while isStreaming is true.
+//
+// The inline view renders the same steps as a compact flow graph instead
+// of a plain vertical list: each step is a small status node, connectors
+// chain node to node, and the chain snakes across a 3-column grid so long
+// logs stay inside the ~75%-wide bubble. Each step's label (tool / args /
+// result) sits under its node. All of that is styled by
+// .activity-tracker--log in App.css; the markup deliberately mirrors the
+// live ActivityTracker's step shape, reusing the same classes.
 function ActivityLogBreakout({ steps }: { steps: ActivityStep[] }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -73,9 +81,13 @@ function ActivityLogBreakout({ steps }: { steps: ActivityStep[] }) {
         Activity log ({steps.length} step{steps.length === 1 ? '' : 's'})
       </button>
       {expanded && (
-        <div className="activity-tracker activity-tracker--log">
+        <div className="activity-tracker activity-tracker--log" role="list" aria-label="Tool activity log">
           {steps.map((step) => (
-            <div key={step.id} className={`activity-tracker__step activity-tracker__step--${step.status}`}>
+            <div
+              key={step.id}
+              role="listitem"
+              className={`activity-tracker__step activity-tracker__step--${step.status}`}
+            >
               <span className="activity-tracker__icon">{STATUS_ICON[step.status]}</span>
               <code className="activity-tracker__tool">{step.toolName}</code>
               <span className="activity-tracker__args">({step.argsSummary})</span>

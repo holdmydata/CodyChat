@@ -161,3 +161,21 @@ A second titlebar toggle swaps the chat view for `LoopxDigest.tsx` — a newspap
 ### Real Markdown rendering (Phase 3, 2026-08-14)
 
 Previously `MessageBubble.tsx` only special-cased triple-backtick fences with a hand-rolled regex split — headers, bold, lists, links all showed as literal text. Replaced with `react-markdown` (renders straight to React elements rather than an HTML string, so no `dangerouslySetInnerHTML`/sanitization step is needed for model-generated content) plus `remark-breaks` (treats single newlines as line breaks — models format with those constantly, and strict CommonMark would otherwise mash consecutive lines into one paragraph). Custom `code` component distinguishes inline vs. fenced code by checking for a `language-xxx` className (react-markdown v10 dropped the old `inline` prop that used to make this trivial).
+
+### Real write collision during ui/src/ dogfooding (Phase 3, 2026-08-14)
+
+After the context-overflow fix, retried the `ActivityTracker.tsx` restyle dogfood test in a fresh conversation. The model's result was genuinely good: a vertical timeline with connector lines between steps (colored by status), a pulsing accent ring on the in-progress step, a dashed ring for "awaiting approval," `prefers-reduced-motion` support, and `role="list"`/`role="listitem"`/`aria-label` accessibility — while correctly preserving the `STATUS_ICON` export and `steps` prop exactly as instructed, and correctly leaving the `.activity-tracker--log` (persisted-log) modifier alone.
+
+**While that turn was in flight, a separate concurrent edit was also being made to the same file** — the "jump to latest" scroll button's CSS. The model's `write_file` for `App.css` landed after and, being a full-file overwrite (not a patch), silently dropped the concurrent rules. Caught immediately via `git diff` — only possible because git had been set up earlier in this same session specifically anticipating this class of risk — confirmed exactly what was lost, and reapplied it on top of the model's redesign without touching its work. `tsc --noEmit` confirmed everything still compiled together afterward.
+
+This is the first *concrete* evidence (not a predicted risk) that a patch/diff-style edit tool is needed — promoted in [[Kanban]] Backlog with this incident as direct justification, ahead of the more speculative "would help with a large file" framing it had before.
+
+Separately: the model also overthought this task (re-attempting the same kind of change repeatedly rather than converging), hitting the 6-call safety cap again — the second time this exact pattern has happened (the duck SVG test was the first). See the "converge quickly" instruction added below in response.
+
+### Standing "converge quickly" instruction (Phase 3, 2026-08-14)
+
+Two separate real incidents — the duck SVG write test and the ActivityTracker.tsx CSS restyle above — both ended the same way: the model kept re-attempting the same kind of change speculatively instead of converging on an answer, burning through most of `MAX_TOOL_ITERATIONS` (6) before the safety cap fired. Flagged the first time as a "watch item, not worth fixing on one occurrence"; the second occurrence crossed that bar.
+
+**Fix:** `AGENT_BEHAVIOR_HINT` (`useChat.ts`) — a short standing instruction ("work efficiently... converge on a final answer within a few tool calls... don't loop trying to perfect it"), always folded into the system prompt via the same `systemParts` mechanism as the environment-context fix, ahead of environment facts and the user's own system prompt. Pure text, no new hooks — unlike earlier edits to this area, this one can't trigger the hook-count HMR crash class.
+
+`tsc --noEmit` clean. Not yet manually re-verified whether it actually reduces the overthinking pattern.

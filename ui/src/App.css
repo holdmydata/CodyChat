@@ -568,7 +568,7 @@
 /* Activity tracker — a step-by-step progress list: each step is a node on
    a vertical timeline, with a connector line running from node to node.
    .activity-tracker--log reuses the same step markup inside a message
-   bubble (persisted log) with no border/background of its own. */
+   bubble (persisted log), restyled below as a compact flow graph. */
 
 .activity-tracker {
   padding: 10px 16px;
@@ -711,12 +711,86 @@
 }
 
 /* Embedded in a message bubble (persisted log) rather than the live
-   full-width bar under the chat — no border/background of its own. */
+   full-width bar under the chat. Instead of a vertical list it renders
+   as a compact flow graph: status nodes chained by connectors, snaking
+   across a 3-column grid so long logs stay inside the ~75%-wide bubble.
+   No border/background of its own — the bubble provides those. All node
+   and status styling (circles, tints, pulse, label colors) is inherited
+   from the base rules above; only the layout is overridden here. */
 .activity-tracker--log {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 26px 10px;
   padding: 4px 0 0;
-  border-top: none;
-  background: none;
   max-height: none;
+  overflow: visible;
+}
+
+/* Step rows become compact flow nodes: the label text stacks under the
+   status node instead of flowing beside it. */
+.activity-tracker--log .activity-tracker__step {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 0;
+  margin: 0;
+  border-radius: 0;
+}
+
+/* Tool names can be long — clip them to the column rather than letting
+   them push the next column. */
+.activity-tracker--log .activity-tracker__tool {
+  line-height: 1.2;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-tracker--log .activity-tracker__args,
+.activity-tracker--log .activity-tracker__result {
+  line-height: 1.2;
+}
+
+/* Connector from each node to the next one in the flow: a horizontal
+   stub leaving the right edge of the node (left 18px = node width),
+   running to the end of the column. Status tinting (accent for running,
+   danger for error/denied) is inherited from the base ::before rules. */
+.activity-tracker--log .activity-tracker__step::before {
+  left: 18px;
+  top: 9px; /* node center: 18px node / 2 */
+  width: calc(100% - 18px);
+  height: 1px;
+  bottom: auto;
+}
+
+/* Vertical drop from the stub down to the next row's connector line
+   (height = cell height + the 26px row gap, measured from the node
+   center). Suppressed on the final step so the chain doesn't dangle. */
+.activity-tracker--log .activity-tracker__step::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 9px;
+  width: 1px;
+  height: calc(100% + 26px);
+  background: var(--border);
+  z-index: 1;
+}
+
+.activity-tracker--log .activity-tracker__step:last-child::after {
+  content: none;
+}
+
+/* Tint the vertical drop the same way as the horizontal stub. */
+.activity-tracker--log .activity-tracker__step--running::after {
+  background: var(--accent);
+}
+
+.activity-tracker--log .activity-tracker__step--error::after,
+.activity-tracker--log .activity-tracker__step--denied::after {
+  background: var(--danger);
 }
 
 .message__code {
