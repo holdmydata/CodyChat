@@ -142,7 +142,11 @@ fn send_request(conn: &McpConnection, method: &str, params: Value) -> Result<Val
 // On Windows, `npx`/other .cmd shims can't be spawned directly by
 // CreateProcess — the same wrinkle execute_command already works around by
 // routing through `cmd /C`. Reused here for the exact same reason.
-fn spawn_and_handshake(command: &str, args: &[String]) -> Result<McpConnection, String> {
+fn spawn_and_handshake(
+    command: &str,
+    args: &[String],
+    env: &HashMap<String, String>,
+) -> Result<McpConnection, String> {
     let mut cmd = if cfg!(target_os = "windows") {
         let mut c = Command::new("cmd");
         c.arg("/C").arg(command);
@@ -153,6 +157,7 @@ fn spawn_and_handshake(command: &str, args: &[String]) -> Result<McpConnection, 
         c.args(args);
         c
     };
+    cmd.envs(env);
     cmd.stdin(Stdio::piped());
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
@@ -256,8 +261,9 @@ pub fn mcp_connect(
     id: String,
     command: String,
     args: Vec<String>,
+    env: HashMap<String, String>,
 ) -> Result<Vec<McpToolInfo>, String> {
-    let conn = spawn_and_handshake(&command, &args)?;
+    let conn = spawn_and_handshake(&command, &args, &env)?;
     match do_handshake_and_list(&conn) {
         Ok(tools) => {
             let mut map = state.0.lock().map_err(|_| "MCP state lock poisoned".to_string())?;

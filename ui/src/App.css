@@ -1668,6 +1668,47 @@
   border-color: var(--danger);
 }
 
+.mcp-servers__env-note {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.mcp-servers__suggestions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.mcp-servers__suggestions-label {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.mcp-servers__suggestion-chip {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.mcp-servers__suggestion-chip:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-bg);
+}
+
+.mcp-servers__env-input {
+  resize: vertical;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
 .mcp-servers__add {
   display: flex;
   flex-direction: column;

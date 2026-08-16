@@ -18,6 +18,43 @@ const STATUS_LABEL: Record<McpServerStatus['state'], string> = {
   error: 'Error',
 };
 
+// Hand-curated, not pulled from a live registry — neither
+// registry.modelcontextprotocol.io nor mcpservers.org actually rank by
+// usage/popularity (checked directly, both are flat/unranked directories),
+// so "most useful" can't be queried automatically. Picking a suggestion
+// prefills the form below rather than connecting immediately: several of
+// these need a path or API key only the user has, and manual-connect-only
+// is this app's deliberate posture anyway (see below).
+interface SuggestedServer {
+  name: string;
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+  note: string;
+}
+
+const SUGGESTED_SERVERS: SuggestedServer[] = [
+  {
+    name: 'Filesystem',
+    command: 'npx',
+    args: ['-y', '@modelcontextprotocol/server-filesystem', 'D:\\path\\to\\allow'],
+    note: 'Edit the path arg to the folder you want exposed before adding.',
+  },
+  {
+    name: 'Blender',
+    command: 'uvx',
+    args: ['blender-mcp'],
+    note: 'Requires the BlenderMCP addon installed and running inside Blender first.',
+  },
+  {
+    name: 'Obsidian',
+    command: 'uvx',
+    args: ['mcp-obsidian'],
+    env: { OBSIDIAN_API_KEY: '', OBSIDIAN_HOST: '127.0.0.1', OBSIDIAN_PORT: '27124' },
+    note: "Requires Obsidian's Local REST API community plugin enabled — get the API key from its settings.",
+  },
+];
+
 // Settings → Tools → MCP servers. Config (name/command/args) persists
 // across restarts; the live connection doesn't (see useMcpServers — manual
 // connect only, on purpose). Args are entered as a single space-separated
@@ -28,16 +65,37 @@ export function McpServers({ servers, statusById, onAdd, onRemove, onConnect, on
   const [name, setName] = useState('');
   const [command, setCommand] = useState('');
   const [argsText, setArgsText] = useState('');
+  const [envText, setEnvText] = useState('');
 
   const canAdd = name.trim().length > 0 && command.trim().length > 0;
+
+  const parseEnvText = (text: string): Record<string, string> => {
+    const env: Record<string, string> = {};
+    for (const line of text.split('\n')) {
+      const idx = line.indexOf('=');
+      if (idx <= 0) continue;
+      const key = line.slice(0, idx).trim();
+      if (key) env[key] = line.slice(idx + 1).trim();
+    }
+    return env;
+  };
 
   const handleAdd = () => {
     if (!canAdd) return;
     const args = argsText.trim().length ? argsText.trim().split(/\s+/) : [];
-    onAdd({ name: name.trim(), command: command.trim(), args });
+    const env = parseEnvText(envText);
+    onAdd({ name: name.trim(), command: command.trim(), args, ...(Object.keys(env).length ? { env } : {}) });
     setName('');
     setCommand('');
     setArgsText('');
+    setEnvText('');
+  };
+
+  const applySuggestion = (s: SuggestedServer) => {
+    setName(s.name);
+    setCommand(s.command);
+    setArgsText(s.args.join(' '));
+    setEnvText(Object.entries(s.env ?? {}).map(([k, v]) => `${k}=${v}`).join('\n'));
   };
 
   return (
@@ -67,6 +125,11 @@ export function McpServers({ servers, statusById, onAdd, onRemove, onConnect, on
                   <code className="mcp-servers__command">
                     {server.command} {server.args.join(' ')}
                   </code>
+                  {server.env && Object.keys(server.env).length > 0 && (
+                    <span className="mcp-servers__env-note">
+                      {Object.keys(server.env).length} env var{Object.keys(server.env).length === 1 ? '' : 's'} set
+                    </span>
+                  )}
                   {status.state === 'error' && status.error && (
                     <pre className="mcp-servers__error">{status.error}</pre>
                   )}
@@ -100,6 +163,21 @@ export function McpServers({ servers, statusById, onAdd, onRemove, onConnect, on
         </div>
       )}
 
+      <div className="mcp-servers__suggestions">
+        <span className="mcp-servers__suggestions-label">Suggested:</span>
+        {SUGGESTED_SERVERS.map((s) => (
+          <button
+            key={s.name}
+            type="button"
+            className="mcp-servers__suggestion-chip"
+            title={s.note}
+            onClick={() => applySuggestion(s)}
+          >
+            {s.name}
+          </button>
+        ))}
+      </div>
+
       <div className="mcp-servers__add">
         <label className="settings-panel__field">
           <span>Name</span>
@@ -116,6 +194,16 @@ export function McpServers({ servers, statusById, onAdd, onRemove, onConnect, on
             value={argsText}
             onChange={(e) => setArgsText(e.target.value)}
             placeholder="-y @modelcontextprotocol/server-filesystem D:\path"
+          />
+        </label>
+        <label className="settings-panel__field">
+          <span>Environment variables (optional, one KEY=VALUE per line)</span>
+          <textarea
+            className="mcp-servers__env-input"
+            value={envText}
+            onChange={(e) => setEnvText(e.target.value)}
+            placeholder="OBSIDIAN_API_KEY=..."
+            rows={2}
           />
         </label>
         <button type="button" onClick={handleAdd} disabled={!canAdd}>

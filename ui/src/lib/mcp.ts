@@ -11,6 +11,8 @@ export interface McpServerConfig {
   name: string;
   command: string;
   args: string[];
+  /** Optional env vars passed to the spawned process — needed by servers that authenticate this way (e.g. Obsidian's OBSIDIAN_API_KEY, GitHub's PAT). */
+  env?: Record<string, string>;
 }
 
 export interface McpToolInfo {
@@ -41,6 +43,7 @@ export async function connectMcpServer(config: McpServerConfig): Promise<McpTool
     id: config.id,
     command: config.command,
     args: config.args,
+    env: config.env ?? {},
   });
 }
 
