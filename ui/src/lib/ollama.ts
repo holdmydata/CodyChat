@@ -30,6 +30,12 @@ export interface StreamChatArgs {
   onToolCalls?: (calls: ToolCall[]) => void;
 }
 
+export interface BakedParams {
+  numCtx?: number;
+  temperature?: number;
+  topP?: number;
+}
+
 export interface ModelInfo {
   capabilities: string[];
   parameterSize: string;
@@ -37,6 +43,8 @@ export interface ModelInfo {
   contextLength: number | null;
   /** The Modelfile's baked-in SYSTEM prompt, e.g. from a custom model saved via createModel/'Save as custom model'. Empty for a plain base model. */
   system: string;
+  /** Sampling params baked into the Modelfile (PARAMETER lines) — distinct from contextLength, which is the model's max, not a saved preference. */
+  bakedParams: BakedParams;
 }
 
 // status/likelyContextOverflow let callers (useChat.ts's retry logic)
@@ -88,6 +96,25 @@ function findContextLength(modelInfo: Record<string, unknown>): number | null {
   return null;
 }
 
+// /api/show returns baked PARAMETER lines as a single newline-delimited
+// string (e.g. "num_ctx  8192\ntemperature  1\ntop_k  20"), not structured
+// JSON — confirmed against a real model's response, not assumed from docs.
+// Only the three params this app's own sliders control are extracted.
+function parseBakedParams(raw: string | undefined): BakedParams {
+  const result: BakedParams = {};
+  if (!raw) return result;
+  for (const line of raw.split('\n')) {
+    const match = line.trim().match(/^(\S+)\s+(\S+)/);
+    if (!match) continue;
+    const value = Number(match[2]);
+    if (Number.isNaN(value)) continue;
+    if (match[1] === 'num_ctx') result.numCtx = value;
+    else if (match[1] === 'temperature') result.temperature = value;
+    else if (match[1] === 'top_p') result.topP = value;
+  }
+  return result;
+}
+
 export async function showModel(baseUrl: string, model: string): Promise<ModelInfo> {
   const res = await fetch(`${baseUrl}/api/show`, {
     method: 'POST',
@@ -104,18 +131,38 @@ export async function showModel(baseUrl: string, model: string): Promise<ModelIn
     quantization: data.details?.quantization_level ?? '',
     contextLength: findContextLength(data.model_info ?? {}),
     system: data.system ?? '',
+    bakedParams: parseBakedParams(data.parameters),
   };
 }
 
-// Creates a persisted named model — Ollama's actual "custom instructions"
-// mechanism, distinct from this app's local per-conversation system prompt.
-// Near-instant: it layers a system prompt onto an existing model rather than
+// Creates (or, if `name` already exists, re-creates/updates) a persisted
+// named model — Ollama's actual "custom instructions" mechanism, distinct
+// from this app's local per-conversation system prompt. Near-instant: it
+// layers a system prompt + parameters onto an existing model rather than
 // copying/downloading weights, so no streaming/progress handling is needed.
-export async function createModel(baseUrl: string, name: string, from: string, system: string): Promise<void> {
+// Passing `name === from` re-bases the model on its own current version,
+// which is exactly "update this model in place" — Ollama's blob store is
+// content-addressed, so the underlying weights are shared/untouched either
+// way, only the system/parameter layer changes.
+export async function createModel(
+  baseUrl: string,
+  name: string,
+  from: string,
+  system: string,
+  parameters?: BakedParams
+): Promise<void> {
+  const body: Record<string, unknown> = { model: name, from, system, stream: false };
+  if (parameters) {
+    const wireParams: Record<string, number> = {};
+    if (parameters.numCtx !== undefined) wireParams.num_ctx = parameters.numCtx;
+    if (parameters.temperature !== undefined) wireParams.temperature = parameters.temperature;
+    if (parameters.topP !== undefined) wireParams.top_p = parameters.topP;
+    if (Object.keys(wireParams).length > 0) body.parameters = wireParams;
+  }
   const res = await fetch(`${baseUrl}/api/create`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: name, from, system, stream: false }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     throw new OllamaError(`Failed to create model: ${res.status} ${res.statusText}`);

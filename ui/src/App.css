@@ -417,35 +417,12 @@
   cursor: not-allowed;
 }
 
-.settings-panel__model-system {
-  font-size: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  background: var(--accent-bg);
-}
-
-.settings-panel__model-system summary {
-  cursor: pointer;
-  font-weight: 600;
-  color: var(--text-h);
-}
-
-.settings-panel__model-system .settings-panel__hint {
-  margin: 6px 0;
-}
-
+/* Distinguishes the model-level (baked-in) prompt from the per-conversation
+   one below it, which uses the same base .settings-panel__field textarea
+   styling — same shape, different tint so the two-layer split stays
+   visually obvious rather than just implied by the label text. */
 .settings-panel__model-system-text {
-  margin: 6px 0 0;
-  padding: 8px;
-  border-radius: 6px;
-  background: var(--bg);
-  font-family: var(--mono);
-  font-size: 11px;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  max-height: 240px;
-  overflow-y: auto;
+  background: var(--accent-bg);
 }
 
 .settings-panel__hint {

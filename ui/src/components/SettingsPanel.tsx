@@ -35,9 +35,18 @@ export function SettingsPanel({
 }: SettingsPanelProps) {
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
   const [modelInfoError, setModelInfoError] = useState<string | null>(null);
-  const [newModelName, setNewModelName] = useState('');
-  const [createStatus, setCreateStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
-  const [createError, setCreateError] = useState<string | null>(null);
+  // The model's own baked-in system prompt, editable here — separate from
+  // `systemPrompt` (the per-conversation additive field below), which is
+  // never baked into a model. Reset whenever the selected model changes.
+  const [builtInDraft, setBuiltInDraft] = useState('');
+  // Defaults to the current model name on every model switch, so clicking
+  // Save with no edits updates that model in place (see createModel's
+  // name===from doc comment) — the direct fix for "I wish I could click
+  // change and save to already existing models". Typing a different name
+  // saves a new model instead, same as the old "Save as custom model" flow.
+  const [saveName, setSaveName] = useState('');
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!model) return;
@@ -49,10 +58,25 @@ export function SettingsPanel({
       .then((info) => {
         if (cancelled) return;
         setModelInfo(info);
-        // Clamp the saved context length down if it exceeds what this
-        // model actually supports (e.g. switching from a long-context
-        // model to a short one) — an invalid slider value looks broken.
-        if (info.contextLength && params.numCtx > info.contextLength) {
+        setBuiltInDraft(info.system);
+        setSaveName(model);
+        setSaveStatus('idle');
+        // Restore this model's own saved sampling params if it has any
+        // (from a previous Update here) — otherwise every model switch
+        // reset context length back to the app default regardless of what
+        // was last saved for that specific model, which is what prompted
+        // this whole feature. Falls back to the old clamp-down behavior
+        // (don't exceed what the model actually supports) when nothing's
+        // been saved yet.
+        const { numCtx, temperature, topP } = info.bakedParams;
+        if (numCtx !== undefined || temperature !== undefined || topP !== undefined) {
+          onParamsChange({
+            ...params,
+            numCtx: numCtx ?? params.numCtx,
+            temperature: temperature ?? params.temperature,
+            topP: topP ?? params.topP,
+          });
+        } else if (info.contextLength && params.numCtx > info.contextLength) {
           onParamsChange({ ...params, numCtx: info.contextLength });
         }
       })
@@ -67,20 +91,29 @@ export function SettingsPanel({
   }, [baseUrl, model]);
 
   const maxCtx = modelInfo?.contextLength ?? FALLBACK_MAX_CTX;
+  const isUpdate = sanitizeModelName(saveName) === model;
 
-  const handleSaveAsModel = async () => {
-    const name = sanitizeModelName(newModelName);
+  const handleSave = async () => {
+    const name = sanitizeModelName(saveName);
     if (!name || !model) return;
-    setCreateStatus('saving');
-    setCreateError(null);
+    setSaveStatus('saving');
+    setSaveError(null);
     try {
-      await createModel(baseUrl, name, model, systemPrompt);
-      setCreateStatus('saved');
-      setNewModelName('');
+      await createModel(baseUrl, name, model, builtInDraft, {
+        numCtx: params.numCtx,
+        temperature: params.temperature,
+        topP: params.topP,
+      });
+      setSaveStatus('saved');
       onModelCreated?.();
+      if (name === model) {
+        showModel(baseUrl, model)
+          .then(setModelInfo)
+          .catch(() => {});
+      }
     } catch (err) {
-      setCreateStatus('error');
-      setCreateError(String(err));
+      setSaveStatus('error');
+      setSaveError(String(err));
     }
   };
 
@@ -113,19 +146,25 @@ export function SettingsPanel({
         </div>
       ) : null}
 
-      {modelInfo?.system && (
-        <details className="settings-panel__model-system">
-          <summary>This model's built-in system prompt ({modelInfo.system.length.toLocaleString()} chars)</summary>
-          <p className="settings-panel__hint">
-            Baked into <code>{model}</code> via "Save as custom model" — always sent, in addition to whatever you add
-            below. To change it, save over this model name again with new text below.
-          </p>
-          <pre className="settings-panel__model-system-text">{modelInfo.system}</pre>
-        </details>
+      {modelInfo && (
+        <label className="settings-panel__field">
+          <span>Model's built-in system prompt</span>
+          <textarea
+            className="settings-panel__model-system-text"
+            value={builtInDraft}
+            onChange={(e) => setBuiltInDraft(e.target.value)}
+            placeholder="(none baked in — type one and Save below to add it)"
+            rows={5}
+          />
+          <span className="settings-panel__hint">
+            Always sent, in addition to the per-conversation prompt below. Edit here and Save below to change it —
+            editing alone doesn't save.
+          </span>
+        </label>
       )}
 
       <label className="settings-panel__field">
-        <span>{modelInfo?.system ? 'Additional system prompt (this conversation)' : 'System prompt'}</span>
+        <span>Additional system prompt (this conversation only)</span>
         <textarea
           value={systemPrompt}
           onChange={(e) => onSystemPromptChange(e.target.value)}
@@ -135,36 +174,34 @@ export function SettingsPanel({
       </label>
 
       <div className="settings-panel__field">
-        <span>Save as custom model</span>
+        <span>Save model settings</span>
         <div className="settings-panel__save-model-row">
           <input
             type="text"
-            value={newModelName}
+            value={saveName}
             onChange={(e) => {
-              setNewModelName(e.target.value);
-              setCreateStatus('idle');
+              setSaveName(e.target.value);
+              setSaveStatus('idle');
             }}
-            placeholder="my-custom-name"
-            disabled={!model || !systemPrompt.trim()}
+            placeholder="model name"
+            disabled={!model}
           />
-          <button
-            type="button"
-            onClick={handleSaveAsModel}
-            disabled={!newModelName.trim() || !model || !systemPrompt.trim() || createStatus === 'saving'}
-          >
-            {createStatus === 'saving' ? 'Saving…' : 'Save'}
+          <button type="button" onClick={handleSave} disabled={!saveName.trim() || !model || saveStatus === 'saving'}>
+            {saveStatus === 'saving' ? 'Saving…' : isUpdate ? `Update ${model}` : 'Save as new'}
           </button>
         </div>
-        {!systemPrompt.trim() && (
-          <span className="settings-panel__hint">Add a system prompt above first — that's what gets baked in.</span>
-        )}
-        {createStatus === 'saved' && (
+        <span className="settings-panel__hint">
+          {isUpdate
+            ? `Bakes the prompt above and the sliders below into ${model} itself — including for other apps using it.`
+            : `Creates a new model based on ${model || '…'}, with the prompt above and sliders below baked in.`}
+        </span>
+        {saveStatus === 'saved' && (
           <span className="settings-panel__hint settings-panel__hint--success">
-            Saved. It's now selectable in the model picker.
+            {isUpdate ? 'Updated.' : "Saved. It's now selectable in the model picker."}
           </span>
         )}
-        {createStatus === 'error' && (
-          <span className="settings-panel__hint settings-panel__hint--error">Failed: {createError}</span>
+        {saveStatus === 'error' && (
+          <span className="settings-panel__hint settings-panel__hint--error">Failed: {saveError}</span>
         )}
       </div>
 
