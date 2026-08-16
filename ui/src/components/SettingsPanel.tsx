@@ -113,8 +113,19 @@ export function SettingsPanel({
         </div>
       ) : null}
 
+      {modelInfo?.system && (
+        <details className="settings-panel__model-system">
+          <summary>This model's built-in system prompt ({modelInfo.system.length.toLocaleString()} chars)</summary>
+          <p className="settings-panel__hint">
+            Baked into <code>{model}</code> via "Save as custom model" — always sent, in addition to whatever you add
+            below. To change it, save over this model name again with new text below.
+          </p>
+          <pre className="settings-panel__model-system-text">{modelInfo.system}</pre>
+        </details>
+      )}
+
       <label className="settings-panel__field">
-        <span>System prompt</span>
+        <span>{modelInfo?.system ? 'Additional system prompt (this conversation)' : 'System prompt'}</span>
         <textarea
           value={systemPrompt}
           onChange={(e) => onSystemPromptChange(e.target.value)}
