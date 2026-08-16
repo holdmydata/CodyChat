@@ -24,7 +24,13 @@ import { getToolDefinitions, type ToolDefinition } from './lib/skills';
 import { loadDisabledTools, saveDisabledTools } from './lib/toolConfig';
 import { DEFAULT_PARAMS } from './types';
 
-const DEFAULT_MODEL = 'llama3.2';
+// Only used for the very first conversation ever created, before any model
+// has been picked — left empty rather than a hardcoded model name (was
+// 'llama3.2', which most users never have pulled locally and showed up as
+// "⚠ llama3.2 (not found)" on every new chat). ModelPicker shows "loading…"
+// until its fetch resolves and only flags a "not found" state for a
+// non-empty value, so an empty default degrades cleanly.
+const DEFAULT_MODEL = '';
 const BASE_URL_KEY = 'ollama-ui:base-url';
 const SIDEBAR_COLLAPSED_KEY = 'ollama-ui:sidebar-collapsed';
 const TITLE_MAX_LENGTH = 48;

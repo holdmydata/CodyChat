@@ -32,12 +32,22 @@ export function useConversations(defaultModel: string) {
   }, [activeId]);
 
   const createConversation = useCallback(
-    (model = defaultModel) => {
+    (model?: string) => {
       const now = Date.now();
+      // Defaults to whichever model the most recent conversation used
+      // (conversations is kept newest-first, see setConversations below) —
+      // not a hardcoded model name, which will always eventually go stale
+      // as the user's local Ollama catalog changes (this replaced a
+      // previous hardcoded 'llama3.2' default that isn't a model most
+      // users actually have pulled, showing up as "⚠ llama3.2 (not
+      // found)" on every new chat). `defaultModel` is only the fallback
+      // for the very first conversation ever, before any model has been
+      // picked.
+      const resolvedModel = model ?? conversations[0]?.model ?? defaultModel;
       const conversation: Conversation = {
         id: makeId(),
         title: 'New chat',
-        model,
+        model: resolvedModel,
         systemPrompt: '',
         params: { ...DEFAULT_PARAMS },
         messages: [],
@@ -48,7 +58,7 @@ export function useConversations(defaultModel: string) {
       setActiveId(conversation.id);
       return conversation.id;
     },
-    [defaultModel]
+    [conversations, defaultModel]
   );
 
   const deleteConversation = useCallback(
