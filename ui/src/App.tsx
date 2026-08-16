@@ -200,6 +200,7 @@ function App() {
     activitySteps,
     continueTurn,
     canContinue,
+    invalidateModelSystemCache,
   } = useChat({
     baseUrl,
     conversation: active,
@@ -316,7 +317,10 @@ function App() {
             onSystemPromptChange={(systemPrompt) => active && updateConversation(active.id, { systemPrompt })}
             params={active?.params ?? DEFAULT_PARAMS}
             onParamsChange={(params) => active && updateConversation(active.id, { params })}
-            onModelCreated={() => setModelListRefreshKey((k) => k + 1)}
+            onModelCreated={() => {
+              setModelListRefreshKey((k) => k + 1);
+              invalidateModelSystemCache();
+            }}
             fontOverride={fontOverride ?? ''}
             onFontOverrideChange={handleFontOverrideChange}
           />

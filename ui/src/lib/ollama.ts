@@ -35,6 +35,8 @@ export interface ModelInfo {
   parameterSize: string;
   quantization: string;
   contextLength: number | null;
+  /** The Modelfile's baked-in SYSTEM prompt, e.g. from a custom model saved via createModel/'Save as custom model'. Empty for a plain base model. */
+  system: string;
 }
 
 // status/likelyContextOverflow let callers (useChat.ts's retry logic)
@@ -101,6 +103,7 @@ export async function showModel(baseUrl: string, model: string): Promise<ModelIn
     parameterSize: data.details?.parameter_size ?? '',
     quantization: data.details?.quantization_level ?? '',
     contextLength: findContextLength(data.model_info ?? {}),
+    system: data.system ?? '',
   };
 }
 

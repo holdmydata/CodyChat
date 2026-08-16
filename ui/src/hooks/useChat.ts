@@ -2,7 +2,7 @@ import { useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { sendNotification, isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification';
-import { streamChat, OllamaError, type WireMessage } from '../lib/ollama';
+import { streamChat, showModel, OllamaError, type WireMessage } from '../lib/ollama';
 import { executeSkill, getToolDefinitions, type ToolDefinition } from '../lib/skills';
 import { getEnvironmentInfo, formatEnvironmentContext } from '../lib/environment';
 import { summarizeArgs, summarizeValue } from '../lib/format';
@@ -129,6 +129,17 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
   // Real OS/home/Documents paths, fetched once and folded into every
   // turn's system prompt so the model doesn't have to guess at paths.
   const envContextRef = useRef<string | null>(null);
+  // A wire request always includes an explicit `system` message (see
+  // systemParts below — AGENT_BEHAVIOR_HINT alone guarantees it's never
+  // empty), and Ollama replaces a Modelfile's own baked-in SYSTEM prompt
+  // entirely whenever the request supplies one — it does not merge them.
+  // Left alone, that silently erased the system prompt of any custom model
+  // saved via "Save as custom model" (/api/create) the moment a
+  // conversation didn't also have its own per-conversation systemPrompt set
+  // — a real, previously-unfixed bug distinct from the earlier ModelPicker
+  // auto-swap fix. Fetched lazily per model (via /api/show) and folded back
+  // into systemParts so the model's own persona survives regardless.
+  const modelSystemCacheRef = useRef<Map<string, string>>(new Map());
 
   const requestApproval = useCallback((call: ToolCall): Promise<boolean> => {
     setPendingToolCall(call);
@@ -240,7 +251,8 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
         return;
       }
 
-      const systemParts = [AGENT_BEHAVIOR_HINT, envContextRef.current, conversation.systemPrompt].filter(
+      const modelSystem = modelSystemCacheRef.current.get(conversation.model) ?? '';
+      const systemParts = [AGENT_BEHAVIOR_HINT, envContextRef.current, modelSystem, conversation.systemPrompt].filter(
         (s): s is string => Boolean(s && s.trim())
       );
       const systemContent = systemParts.join('\n\n');
@@ -402,6 +414,14 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
             envContextRef.current = '';
           }
         }
+        if (conversation.model && !modelSystemCacheRef.current.has(conversation.model)) {
+          try {
+            const info = await showModel(baseUrl, conversation.model);
+            modelSystemCacheRef.current.set(conversation.model, info.system);
+          } catch {
+            modelSystemCacheRef.current.set(conversation.model, '');
+          }
+        }
         await runTurn(msgs, 0, { used: false });
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
@@ -412,7 +432,7 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
         abortRef.current = null;
       }
     },
-    [conversation, runTurn]
+    [baseUrl, conversation, runTurn]
   );
 
   const sendMessage = useCallback(
@@ -441,6 +461,13 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
     await beginTurn(pausedMessages);
   }, [conversation, isStreaming, pausedMessages, beginTurn]);
 
+  // Called after "Save as custom model" — re-saving over an existing custom
+  // model's name (iterating on a persona) would otherwise keep serving the
+  // stale cached system prompt for the rest of the session.
+  const invalidateModelSystemCache = useCallback(() => {
+    modelSystemCacheRef.current.clear();
+  }, []);
+
   return {
     sendMessage,
     stop,
@@ -452,5 +479,6 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
     activitySteps,
     continueTurn,
     canContinue: pausedMessages !== null,
+    invalidateModelSystemCache,
   };
 }
