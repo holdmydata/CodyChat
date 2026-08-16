@@ -371,6 +371,10 @@
   font-family: var(--mono);
 }
 
+.settings-panel__field .model-picker {
+  width: 100%;
+}
+
 .settings-panel__field input[type='text'],
 .settings-panel__field textarea {
   font: inherit;

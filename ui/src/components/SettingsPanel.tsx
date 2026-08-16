@@ -1,10 +1,14 @@
 import { useEffect, useState } from 'react';
 import { createModel, showModel, type ModelInfo } from '../lib/ollama';
+import { ModelPicker } from './ModelPicker';
 import type { ChatParams } from '../types';
 
 interface SettingsPanelProps {
   baseUrl: string;
   model: string;
+  onModelChange: (model: string) => void;
+  /** Bumped after a custom-model save so the picker's fetched list refreshes without needing the header one to also be visible (it isn't, in compact/widget mode — see ChatWindow). */
+  modelListRefreshKey?: number;
   systemPrompt: string;
   onSystemPromptChange: (prompt: string) => void;
   params: ChatParams;
@@ -21,6 +25,8 @@ function sanitizeModelName(raw: string): string {
 export function SettingsPanel({
   baseUrl,
   model,
+  onModelChange,
+  modelListRefreshKey,
   systemPrompt,
   onSystemPromptChange,
   params,
@@ -80,6 +86,11 @@ export function SettingsPanel({
 
   return (
     <div className="settings-panel">
+      <label className="settings-panel__field">
+        <span>Model</span>
+        <ModelPicker baseUrl={baseUrl} value={model} onChange={onModelChange} refreshKey={modelListRefreshKey} />
+      </label>
+
       {modelInfoError ? (
         <p className="settings-panel__model-info settings-panel__model-info--error">
           Couldn't load model info: {modelInfoError}

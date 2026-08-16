@@ -313,6 +313,8 @@ function App() {
             onConnectMcpServer={mcp.connect}
             onDisconnectMcpServer={mcp.disconnect}
             activeModel={active?.model ?? ''}
+            onModelChange={(model) => active && updateConversation(active.id, { model })}
+            modelListRefreshKey={modelListRefreshKey}
             systemPrompt={active?.systemPrompt ?? ''}
             onSystemPromptChange={(systemPrompt) => active && updateConversation(active.id, { systemPrompt })}
             params={active?.params ?? DEFAULT_PARAMS}

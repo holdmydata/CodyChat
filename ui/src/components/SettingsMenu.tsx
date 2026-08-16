@@ -27,6 +27,8 @@ interface SettingsMenuProps {
   onDisconnectMcpServer: (id: string) => void;
   /** The active conversation's model/system-prompt/params — moved here from a per-conversation toggle in the chat header so persona/modelfile editing has one clear home. */
   activeModel: string;
+  onModelChange: (model: string) => void;
+  modelListRefreshKey?: number;
   systemPrompt: string;
   onSystemPromptChange: (prompt: string) => void;
   params: ChatParams;
@@ -71,6 +73,8 @@ export function SettingsMenu({
   onConnectMcpServer,
   onDisconnectMcpServer,
   activeModel,
+  onModelChange,
+  modelListRefreshKey,
   systemPrompt,
   onSystemPromptChange,
   params,
@@ -158,6 +162,8 @@ export function SettingsMenu({
             <SettingsPanel
               baseUrl={baseUrl}
               model={activeModel}
+              onModelChange={onModelChange}
+              modelListRefreshKey={modelListRefreshKey}
               systemPrompt={systemPrompt}
               onSystemPromptChange={onSystemPromptChange}
               params={params}
