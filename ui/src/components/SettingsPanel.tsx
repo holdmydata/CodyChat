@@ -91,10 +91,20 @@ export function SettingsPanel({
   }, [baseUrl, model]);
 
   const maxCtx = modelInfo?.contextLength ?? FALLBACK_MAX_CTX;
-  const isUpdate = sanitizeModelName(saveName) === model;
+  // Real Ollama model names routinely contain characters sanitizeModelName
+  // strips (':' for the :tag suffix, '/' for a namespaced hf.co/... name,
+  // uppercase letters) — it exists to keep a brand-new, user-typed name
+  // well-formed, not to round-trip an existing one. Comparing against a
+  // sanitized copy of an untouched (still-equal-to-model) saveName meant
+  // this was always false for any model with a tag, e.g. "assistant:latest"
+  // sanitizes to "assistant-latest", which never equals "assistant:latest"
+  // — so "Update <model>" never showed. Compare the raw, untouched value
+  // instead, and only sanitize when actually saving a new/different name.
+  const trimmedSaveName = saveName.trim();
+  const isUpdate = trimmedSaveName === model && model !== '';
 
   const handleSave = async () => {
-    const name = sanitizeModelName(saveName);
+    const name = isUpdate ? model : sanitizeModelName(saveName);
     if (!name || !model) return;
     setSaveStatus('saving');
     setSaveError(null);
@@ -106,7 +116,7 @@ export function SettingsPanel({
       });
       setSaveStatus('saved');
       onModelCreated?.();
-      if (name === model) {
+      if (isUpdate) {
         showModel(baseUrl, model)
           .then(setModelInfo)
           .catch(() => {});
