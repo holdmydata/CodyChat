@@ -19,6 +19,8 @@ interface SettingsMenuProps {
   tools: ToolDefinition[];
   disabledTools: Set<string>;
   onToggleTool: (name: string) => void;
+  autoApproveReadOnly: boolean;
+  onToggleAutoApproveReadOnly: () => void;
   mcpServers: McpServerConfig[];
   mcpStatusById: Record<string, McpServerStatus>;
   onAddMcpServer: (config: Omit<McpServerConfig, 'id'>) => void;
@@ -34,6 +36,8 @@ interface SettingsMenuProps {
   params: ChatParams;
   onParamsChange: (params: ChatParams) => void;
   onModelCreated: () => void;
+  memoryDisabled: boolean;
+  onMemoryDisabledChange: (disabled: boolean) => void;
   /** Manual font override — wins over whatever the active pack requests, since packs' fonts (Google Fonts names) aren't bundled and only render if installed locally. Empty string means no override. */
   fontOverride: string;
   onFontOverrideChange: (font: string) => void;
@@ -66,6 +70,8 @@ export function SettingsMenu({
   tools,
   disabledTools,
   onToggleTool,
+  autoApproveReadOnly,
+  onToggleAutoApproveReadOnly,
   mcpServers,
   mcpStatusById,
   onAddMcpServer,
@@ -80,6 +86,8 @@ export function SettingsMenu({
   params,
   onParamsChange,
   onModelCreated,
+  memoryDisabled,
+  onMemoryDisabledChange,
   fontOverride,
   onFontOverrideChange,
 }: SettingsMenuProps) {
@@ -169,6 +177,8 @@ export function SettingsMenu({
               params={params}
               onParamsChange={onParamsChange}
               onModelCreated={onModelCreated}
+              memoryDisabled={memoryDisabled}
+              onMemoryDisabledChange={onMemoryDisabledChange}
             />
 
             {appVersion && (
@@ -187,6 +197,29 @@ export function SettingsMenu({
               Every call still needs your explicit approval when the model requests it — turning a tool off here
               goes further, removing it from what the model can even see or request.
             </p>
+
+            <div className="settings-menu__tool-row">
+              <div className="settings-menu__tool-info">
+                <div className="settings-menu__tool-name">
+                  <span>Auto-approve read-only tools</span>
+                  <span className="settings-menu__risk-badge settings-menu__risk-badge--read">Read-only</span>
+                </div>
+                <p className="settings-menu__tool-desc">
+                  Skip the approval prompt for tools that only read data (e.g. search_memory, read_file). Write and
+                  execute calls always still ask, regardless of this setting.
+                </p>
+              </div>
+              <label className="settings-menu__toggle">
+                <input
+                  type="checkbox"
+                  checked={autoApproveReadOnly}
+                  onChange={onToggleAutoApproveReadOnly}
+                  aria-label={`${autoApproveReadOnly ? 'Disable' : 'Enable'} auto-approve for read-only tools`}
+                />
+                <span className="settings-menu__toggle-track" aria-hidden="true" />
+              </label>
+            </div>
+
             {tools.length === 0 ? (
               <p className="settings-menu__hint">Loading tool list…</p>
             ) : (

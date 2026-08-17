@@ -977,9 +977,93 @@
 
 .message-input {
   display: flex;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
   padding: 12px 16px;
   border-top: 2px solid var(--accent-border);
+  transition: background 0.15s ease;
+}
+
+/* Tauri's drag-drop event is window-scoped, not tied to this element as a
+   real HTML drop target — this highlight is purely a visual cue driven by
+   the 'over'/'drop'/'leave' event payload types in MessageInput.tsx, not a
+   native dragover/drop DOM listener. */
+.message-input--drag-over {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.message-input__row {
+  display: flex;
+  gap: 8px;
+}
+
+.message-input__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.message-input__attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 240px;
+  padding: 4px 6px 4px 10px;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg, color-mix(in srgb, var(--accent) 10%, transparent));
+  color: var(--text-h);
+  font-size: 0.82rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.message-input__attachment-remove {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.message-input__attachment-remove:hover {
+  background: color-mix(in srgb, var(--danger) 20%, transparent);
+  color: var(--danger);
+}
+
+/* "Bubble" (fully round, pill radius) rather than the app's usual
+   rounded-square button shape — a deliberately distinct affordance for
+   "attach something" vs. every other rectangular action button here, and
+   themed through the same var() chain as everything else so it re-skins
+   with the active pack instead of reading as a fixed neutral icon. */
+.message-input__insert-file {
+  align-self: flex-end;
+  width: 38px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--accent);
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.message-input__insert-file:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 12%, var(--input-bg));
+}
+
+.message-input__insert-file:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .message-input textarea {
@@ -1092,6 +1176,87 @@
   margin: 0;
   font-size: 13px;
   color: var(--danger);
+}
+
+.loopx-digest__run-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.loopx-digest__max-todos {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+
+.loopx-digest__max-todos input {
+  width: 60px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text-h);
+  font: inherit;
+}
+
+.loopx-digest__run-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.loopx-digest__run-status code {
+  font-family: var(--mono);
+}
+
+.loopx-digest__run-status--stopped {
+  opacity: 0.75;
+}
+
+.loopx-digest__run-status button {
+  padding: 4px 12px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--accent-border);
+  background: var(--accent);
+  color: var(--bg);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.loopx-digest__run-button {
+  margin-top: 8px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--accent-border);
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.loopx-digest__run-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.loopx-digest__run-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Reuses .chat-window__continue's base band styling — a "stopped" run is
+   informational, not an action waiting on a click, so it drops the accent
+   background the active/paused states keep. */
+.chat-window__loop-status--stopped {
+  background: var(--bg-alt);
 }
 
 /* Theme picker — titlebar popover (see lib/themes.ts). The menu sits
@@ -1743,6 +1908,212 @@
 
 .mcp-servers__add button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+.titlebar__memory-graph-toggle {
+  app-region: no-drag;
+  height: 100%;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.titlebar__memory-graph-toggle:hover {
+  background: var(--hover-bg);
+}
+
+.memory-graph-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.memory-graph-view__controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.memory-graph-view__search {
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 12px;
+  min-width: 160px;
+}
+
+.memory-graph-view__type-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.memory-graph-view__type-filter {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text);
+  text-transform: capitalize;
+  cursor: pointer;
+}
+
+.memory-graph-view__distance-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.memory-graph-view__distance-field input[type='range'] {
+  width: 120px;
+}
+
+.memory-graph-view__neighbors-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.memory-graph-view__neighbors-field input {
+  width: 56px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text-h);
+  font: inherit;
+}
+
+.memory-graph-view__hint {
+  margin: auto;
+  max-width: 340px;
+  text-align: center;
+  opacity: 0.7;
+  font-size: 13px;
+  padding: 0 16px;
+}
+
+.memory-graph-view__canvas-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.memory-graph-view__canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.memory-graph-view__detail {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: min(320px, calc(100% - 24px));
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--accent-border);
+  /* Deliberately opaque (--bg-alt), not the translucent --accent-bg every
+     other panel in this app uses — this one floats over a WebGL canvas,
+     not the app's own page background, so translucency here shows through
+     to whatever the 3D scene happens to be rendering underneath instead of
+     the intended tint. Real bug hit live: on Light theme, --accent-bg's
+     12%-opacity blue barely tinted the canvas's own (separately frozen)
+     dark background, leaving --text-h's dark navy text on a dark backdrop
+     — unreadable regardless of which theme was actually selected. */
+  background: var(--bg-alt);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-h);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+}
+
+.memory-graph-view__detail-close {
+  float: right;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 0 4px 8px;
+}
+
+.memory-graph-view__detail-type {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.memory-graph-view__detail-content {
+  margin: 0 0 8px;
+  white-space: pre-wrap;
+  max-height: min(50vh, 420px);
+  overflow-y: auto;
+}
+
+.memory-graph-view__detail-meta {
+  display: block;
+  font-size: 11px;
+  opacity: 0.65;
+  word-break: break-all;
+}
+
+.memory-graph-view__detail-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.memory-graph-view__detail-actions button {
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text-h);
+  cursor: pointer;
+}
+
+.memory-graph-view__delete-start {
+  border-color: var(--danger) !important;
+  color: var(--danger) !important;
+}
+
+.memory-graph-view__delete-confirm {
+  border-color: var(--danger) !important;
+  background: var(--danger) !important;
+  color: var(--bg) !important;
+}
+
+.memory-graph-view__confirm-label {
+  font-size: 12px;
+  opacity: 0.85;
+  flex-basis: 100%;
 }
 
 .mcp-servers__add button:disabled {

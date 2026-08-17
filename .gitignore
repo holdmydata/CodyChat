@@ -1,8 +1,10 @@
 # Claude Code local settings (personal tool-permission grants, per machine)
 .claude/settings.local.json
+.claude
 
 # OS cruft
 .DS_Store
 Thumbs.db
 
 local-assets/
+toys/

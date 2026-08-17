@@ -1,29 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
-import { invoke } from '@tauri-apps/api/core';
-
-interface NextTodo {
-  todo_id: string;
-  text: string;
-  priority: string;
-  action_kind: string;
-}
-
-interface GoalDigest {
-  goal_id: string;
-  should_run: boolean;
-  quota_state: string;
-  todo_total: number;
-  todo_open: number;
-  todo_done: number;
-  next_todo: NextTodo | null;
-  error: string | null;
-}
+import { getLoopxDigest, type GoalDigest } from '../lib/loopx';
+import type { LoopState } from '../hooks/useAutonomousLoop';
 
 const POLL_INTERVAL_MS = 8000;
+const DEFAULT_MAX_TODOS = 1;
 
-export function LoopxDigest() {
+interface LoopxDigestProps {
+  loopState: LoopState;
+  stopReason: string | null;
+  todosCompleted: number;
+  currentGoalId: string | null;
+  onStart: (goalId: string, maxTodos: number) => void;
+  onStop: () => void;
+}
+
+export function LoopxDigest({ loopState, stopReason, todosCompleted, currentGoalId, onStart, onStop }: LoopxDigestProps) {
   const [goals, setGoals] = useState<GoalDigest[] | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [maxTodos, setMaxTodos] = useState(DEFAULT_MAX_TODOS);
   const fetching = useRef(false);
 
   useEffect(() => {
@@ -32,7 +26,7 @@ export function LoopxDigest() {
     const poll = () => {
       if (fetching.current) return; // skip if the previous WSL round-trip hasn't finished
       fetching.current = true;
-      invoke<GoalDigest[]>('get_loopx_digest')
+      getLoopxDigest()
         .then((data) => {
           if (!cancelled) {
             setGoals(data);
@@ -63,8 +57,35 @@ export function LoopxDigest() {
     return <div className="loopx-digest">Loading…</div>;
   }
 
+  const running = loopState !== 'idle' && loopState !== 'stopped';
+
   return (
     <div className="loopx-digest">
+      <div className="loopx-digest__run-controls">
+        <label className="loopx-digest__max-todos">
+          <span>Max todos per run</span>
+          <input
+            type="number"
+            min={1}
+            max={20}
+            value={maxTodos}
+            onChange={(e) => setMaxTodos(Math.max(1, Number(e.target.value) || 1))}
+            disabled={running}
+          />
+        </label>
+        {running && (
+          <p className="loopx-digest__run-status">
+            Running against <code>{currentGoalId}</code> — {loopState} ({todosCompleted} completed)
+            <button type="button" onClick={onStop}>
+              Stop
+            </button>
+          </p>
+        )}
+        {!running && loopState === 'stopped' && stopReason && (
+          <p className="loopx-digest__run-status loopx-digest__run-status--stopped">Last run stopped: {stopReason}</p>
+        )}
+      </div>
+
       {goals.map((goal) => (
         <article key={goal.goal_id} className="loopx-digest__card">
           <h3>{goal.goal_id}</h3>
@@ -80,6 +101,18 @@ export function LoopxDigest() {
               ) : (
                 <p className="loopx-digest__next loopx-digest__next--idle">Nothing queued</p>
               )}
+              {/* Runs a real turn in the chat window using the app's own tool-approval
+                  pipeline — see useAutonomousLoop.ts. Deliberately not offered when
+                  nothing's queued, even though the button would just no-op cleanly either
+                  way, since there's nothing meaningful to click into. */}
+              <button
+                type="button"
+                className="loopx-digest__run-button"
+                onClick={() => onStart(goal.goal_id, maxTodos)}
+                disabled={running || !goal.next_todo}
+              >
+                Start autonomous run
+              </button>
             </>
           )}
         </article>

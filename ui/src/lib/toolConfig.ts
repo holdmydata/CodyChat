@@ -8,6 +8,7 @@ const TOOL_RISK: Record<string, ToolRisk> = {
   read_file: 'read',
   list_directory: 'read',
   search_files: 'read',
+  search_memory: 'read',
   write_file: 'write',
   edit_file: 'write',
   execute_command: 'execute',
@@ -47,4 +48,19 @@ export function loadDisabledTools(): Set<string> {
 
 export function saveDisabledTools(disabled: Set<string>): void {
   localStorage.setItem(DISABLED_TOOLS_KEY, JSON.stringify([...disabled]));
+}
+
+const AUTO_APPROVE_READ_KEY = 'ollama-ui:auto-approve-read';
+
+// When on, a 'read' risk-tier tool call (see riskOf above) skips the
+// approval prompt entirely and runs immediately — everything else (write,
+// execute, and any future unclassified tool defaulting to 'write') still
+// requires an explicit click regardless of this setting. App-level, not
+// per-conversation, same persistence pattern as disabledTools.
+export function loadAutoApproveReadOnly(): boolean {
+  return localStorage.getItem(AUTO_APPROVE_READ_KEY) === 'true';
+}
+
+export function saveAutoApproveReadOnly(value: boolean): void {
+  localStorage.setItem(AUTO_APPROVE_READ_KEY, String(value));
 }

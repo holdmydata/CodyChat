@@ -93,13 +93,18 @@ pub struct GoalDigest {
     error: Option<String>,
 }
 
-struct TrackedGoal {
-    goal_id: &'static str,
-    agent_id: &'static str,
-    project_dir: &'static str,
+#[derive(Clone, Copy)]
+pub(crate) struct TrackedGoal {
+    pub(crate) goal_id: &'static str,
+    pub(crate) agent_id: &'static str,
+    pub(crate) project_dir: &'static str,
 }
 
-const TRACKED_GOALS: &[TrackedGoal] = &[
+// pub(crate): loopx.rs's write-side commands resolve agent_id/project_dir
+// from a goal_id through this same list, so a typo'd or unknown goal_id
+// fails loudly instead of shelling into an arbitrary WSL path built from
+// whatever the frontend happened to send.
+pub(crate) const TRACKED_GOALS: &[TrackedGoal] = &[
     TrackedGoal {
         goal_id: "meansquares-shell-goal",
         agent_id: "ollama-harness-01",
@@ -110,9 +115,14 @@ const TRACKED_GOALS: &[TrackedGoal] = &[
         agent_id: "ollama-harness-01",
         project_dir: r"d:\MeanSquares\CodyChat\toys\kanban-reader",
     },
+    TrackedGoal {
+        goal_id: "threejs-game-goal",
+        agent_id: "ollama-harness-01",
+        project_dir: r"d:\MeanSquares\CodyChat\toys\threejs-game",
+    },
 ];
 
-fn to_wsl_path(windows_path: &str) -> String {
+pub(crate) fn to_wsl_path(windows_path: &str) -> String {
     let drive = windows_path.chars().next().unwrap_or('c').to_ascii_lowercase();
     let rest = windows_path[2..].replace('\\', "/");
     format!("/mnt/{drive}{rest}")
@@ -173,9 +183,27 @@ fn fetch_one(goal: &TrackedGoal) -> GoalDigest {
     }
 }
 
+// Each goal's digest is one blocking WSL subprocess round-trip
+// (~0.3-0.5s warm, more if the WSL2 VM has been idle) — real, user-noticed
+// latency ("Show Tasks is so slow"), and it was only going to get worse:
+// this fix landed in the same session a 3rd tracked goal got added, which
+// would have made a sequential fetch proportionally slower every time
+// another toy project joins. Plain OS threads, not async — Command::output()
+// is blocking either way, and this project has consistently avoided pulling
+// in an async runtime for something a thread handles directly.
 #[tauri::command]
 pub fn get_loopx_digest() -> Vec<GoalDigest> {
-    TRACKED_GOALS.iter().map(fetch_one).collect()
+    let handles: Vec<_> = TRACKED_GOALS
+        .iter()
+        .map(|goal| {
+            let goal = *goal;
+            std::thread::spawn(move || fetch_one(&goal))
+        })
+        .collect();
+    handles
+        .into_iter()
+        .map(|h| h.join().unwrap_or_else(|_| empty_digest("unknown", "digest fetch thread panicked".to_string())))
+        .collect()
 }
 
 // Theme pack import (lib/themes.ts::readThemePackFile): reads a pack file

@@ -5,6 +5,8 @@ import { sendNotification, isPermissionGranted, requestPermission } from '@tauri
 import { streamChat, showModel, OllamaError, type WireMessage } from '../lib/ollama';
 import { executeSkill, getToolDefinitions, type ToolDefinition } from '../lib/skills';
 import { getEnvironmentInfo, formatEnvironmentContext } from '../lib/environment';
+import { indexMessage } from '../lib/memory';
+import { riskOf } from '../lib/toolConfig';
 import { summarizeArgs, summarizeValue } from '../lib/format';
 import { budgetTokensFor, estimateTokens, trimMessagesToBudget } from '../lib/contextBudget';
 import type { ActivityStep, Conversation, Message, ToolCall } from '../types';
@@ -64,6 +66,21 @@ const AGENT_BEHAVIOR_HINT =
   'inherently hard to get exactly right in one pass (e.g. hand-drafting detailed visual content like SVG art), do your best ' +
   'single attempt, briefly note any limitation, and stop rather than looping to perfect it.';
 
+// Real, measured cost this hint targets: a thinking-mode model can fully
+// draft a file's actual content inside its own thinking block, then
+// generate that same content again as the real tool-call argument —
+// thinking tokens and output tokens generate at the same rate, so drafting
+// content twice genuinely costs twice the generation time for identical
+// text. Observed live on the threejs-game-goal autonomous run (2026-08-17):
+// long thinking-panel content visibly drafting file contents before the
+// actual write_file call. Separate from AGENT_BEHAVIOR_HINT's concern
+// (fewer tool-call rounds) — this is about what happens inside a single
+// round.
+const THINKING_EFFICIENCY_HINT =
+  'When you need to write substantial content (code, a file, a long document), use your thinking to plan its structure and ' +
+  "approach only — do not draft the full content there. Generate the actual content once, directly as the tool call's " +
+  'argument, not twice.';
+
 const RETRY_TRIM_MESSAGE = '*(Note: earlier tool results were trimmed to fit the context window.)*\n\n';
 const OVERFLOW_AFTER_RETRY_MESSAGE =
   "(The conversation is too large for this model's context window, even after trimming. Try raising context length in Settings, or start a new conversation.)";
@@ -76,6 +93,8 @@ interface UseChatArgs {
   disabledTools?: Set<string>;
   /** Tool defs from currently-connected MCP servers, merged alongside the built-in skills. */
   mcpTools?: ToolDefinition[];
+  /** When true, 'read' risk-tier tool calls skip the approval prompt and run immediately — see toolConfig.ts. */
+  autoApproveReadOnly?: boolean;
 }
 
 function toWireMessages(messages: Pick<Message, 'role' | 'content' | 'toolCalls' | 'toolCallId'>[]): WireMessage[] {
@@ -101,7 +120,14 @@ function isEmptyThinkingOnly(result: { current: Message[]; assistantId: string; 
   return Boolean(msg && !msg.content && msg.thinking);
 }
 
-export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools, mcpTools }: UseChatArgs) {
+export function useChat({
+  baseUrl,
+  conversation,
+  onMessagesChange,
+  disabledTools,
+  mcpTools,
+  autoApproveReadOnly,
+}: UseChatArgs) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingToolCall, setPendingToolCall] = useState<ToolCall | null>(null);
@@ -140,6 +166,11 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
   // auto-swap fix. Fetched lazily per model (via /api/show) and folded back
   // into systemParts so the model's own persona survives regardless.
   const modelSystemCacheRef = useRef<Map<string, string>>(new Map());
+  // Set at the end of every runTurn (both the normal final-answer path and
+  // the max-iterations stop notice), read by runAutonomousTurn right after
+  // beginTurn resolves — a ref rather than state specifically so reading it
+  // immediately after the await can't race React's async state batching.
+  const lastTurnResultRef = useRef<{ content: string; toolNames: string[] } | null>(null);
 
   const requestApproval = useCallback((call: ToolCall): Promise<boolean> => {
     setPendingToolCall(call);
@@ -246,15 +277,23 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
           createdAt: Date.now(),
           activitySteps: activityStepsRef.current.length ? activityStepsRef.current : undefined,
         };
+        lastTurnResultRef.current = {
+          content: notice.content,
+          toolNames: activityStepsRef.current.map((s) => s.toolName),
+        };
         onMessagesChange(conversation.id, [...msgs, notice]);
         setPausedMessages(msgs);
         return;
       }
 
       const modelSystem = modelSystemCacheRef.current.get(conversation.model) ?? '';
-      const systemParts = [AGENT_BEHAVIOR_HINT, envContextRef.current, modelSystem, conversation.systemPrompt].filter(
-        (s): s is string => Boolean(s && s.trim())
-      );
+      const systemParts = [
+        AGENT_BEHAVIOR_HINT,
+        THINKING_EFFICIENCY_HINT,
+        envContextRef.current,
+        modelSystem,
+        conversation.systemPrompt,
+      ].filter((s): s is string => Boolean(s && s.trim()));
       const systemContent = systemParts.join('\n\n');
       const systemTokens = systemContent ? estimateTokens(systemContent) : 0;
       const budgetTokens = Math.max(0, budgetTokensFor(conversation.params.numCtx) - systemTokens);
@@ -290,6 +329,26 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
       // model's own output, so both cases get the same retry, just with a
       // much harder cut for the empty-completion case since freeing
       // generation headroom is specifically the point of it.
+      // Shared by both "the retry itself also failed" and "no retry budget
+      // left in this turn" below — from the user's side those are the same
+      // outcome (conversation too large, nothing more this turn can do
+      // about it automatically), so both get the same clean message
+      // instead of one showing a friendly notice and the other dumping a
+      // raw Ollama error. Real gap found live: a long tool-calling turn hit
+      // overflow twice — the first time the retry silently recovered it,
+      // the second time (retry budget already spent) it re-threw the raw
+      // JSON error straight into the `error` state instead of this notice.
+      const showOverflowNotice = () => {
+        const notice: Message = {
+          id: makeId(),
+          role: 'assistant',
+          content: OVERFLOW_AFTER_RETRY_MESSAGE,
+          createdAt: Date.now(),
+          activitySteps: activityStepsRef.current.length ? activityStepsRef.current : undefined,
+        };
+        onMessagesChange(conversation.id, [...msgs, notice]);
+      };
+
       const producedNothing = attemptResult ? isEmptyThinkingOnly(attemptResult) : false;
       if ((overflowError || producedNothing) && !retryState.used) {
         retryState.used = true;
@@ -317,21 +376,15 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
           };
           onMessagesChange(conversation.id, attemptResult.current);
         } catch {
-          const notice: Message = {
-            id: makeId(),
-            role: 'assistant',
-            content: OVERFLOW_AFTER_RETRY_MESSAGE,
-            createdAt: Date.now(),
-            activitySteps: activityStepsRef.current.length ? activityStepsRef.current : undefined,
-          };
-          onMessagesChange(conversation.id, [...msgs, notice]);
+          showOverflowNotice();
           return;
         }
       } else if (overflowError) {
         // Overflow error, but the one retry this turn is already spent —
-        // no more automatic recovery available; surface it like any other
-        // failure (the outer catch in beginTurn sets the `error` state).
-        throw overflowError;
+        // same clean notice as the "retry attempted and failed" case above,
+        // not a raw error dump (see showOverflowNotice's comment).
+        showOverflowNotice();
+        return;
       }
 
       if (!attemptResult) return;
@@ -344,22 +397,42 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
           current = current.map((m) => (m.id === assistantId ? { ...m, activitySteps: activityStepsRef.current } : m));
           onMessagesChange(conversation.id, current);
         }
-        const finalContent = current.find((m) => m.id === assistantId)?.content;
-        if (finalContent) {
-          notifyIfHidden('response', summarizeValue(finalContent, 150));
+        const finalMessage = current.find((m) => m.id === assistantId);
+        lastTurnResultRef.current = {
+          content: finalMessage?.content ?? '',
+          toolNames: activityStepsRef.current.map((s) => s.toolName),
+        };
+        if (finalMessage?.content) {
+          notifyIfHidden('response', summarizeValue(finalMessage.content, 150));
+          if (!conversation.memoryDisabled) {
+            void indexMessage(
+              baseUrl,
+              conversation.id,
+              finalMessage.id,
+              'assistant',
+              finalMessage.content,
+              finalMessage.createdAt
+            );
+          }
         }
         return;
       }
 
       for (const call of toolCalls as ToolCall[]) {
-        const approved = await requestApproval(call);
+        // Auto-approve is scoped to 'read' risk only — write/execute (and
+        // any future unclassified tool, which defaults to 'write' in
+        // riskOf) always require the explicit click regardless of this
+        // setting. Short-circuits before requestApproval is ever called, so
+        // no prompt/pendingToolCall state is set for an auto-approved call.
+        const autoApproved = Boolean(autoApproveReadOnly) && riskOf(call.name) === 'read';
+        const approved = autoApproved || (await requestApproval(call));
         updateActivitySteps((prev) =>
           prev.map((s) => (s.id === call.id ? { ...s, status: approved ? 'running' : 'denied' } : s))
         );
         let result: string;
         if (approved) {
           try {
-            result = await executeSkill(call);
+            result = await executeSkill(call, { baseUrl, conversationId: conversation.id });
             updateActivitySteps((prev) =>
               prev.map((s) => (s.id === call.id ? { ...s, status: 'done', resultSummary: summarizeValue(result) } : s))
             );
@@ -385,7 +458,17 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
 
       await runTurn(current, depth + 1, retryState);
     },
-    [conversation, disabledTools, mcpTools, onMessagesChange, requestApproval, streamAssistantReply, updateActivitySteps]
+    [
+      autoApproveReadOnly,
+      baseUrl,
+      conversation,
+      disabledTools,
+      mcpTools,
+      onMessagesChange,
+      requestApproval,
+      streamAssistantReply,
+      updateActivitySteps,
+    ]
   );
 
   // Shared setup for both a brand-new message and a Continue click: fresh
@@ -451,15 +534,39 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
       };
       const messages = [...conversation.messages, userMessage];
       onMessagesChange(conversation.id, messages);
+      if (!conversation.memoryDisabled) {
+        void indexMessage(baseUrl, conversation.id, userMessage.id, 'user', content, userMessage.createdAt);
+      }
       await beginTurn(messages);
     },
-    [conversation, isStreaming, onMessagesChange, beginTurn]
+    [baseUrl, conversation, isStreaming, onMessagesChange, beginTurn]
   );
 
   const continueTurn = useCallback(async () => {
     if (!conversation || isStreaming || !pausedMessages) return;
     await beginTurn(pausedMessages);
   }, [conversation, isStreaming, pausedMessages, beginTurn]);
+
+  // Drives a real turn from a synthesized (not user-typed) prompt, for
+  // useAutonomousLoop.ts — reuses the exact same beginTurn/runTurn path as
+  // any other message (same streaming, same tool-approval gating, same
+  // context-overflow retry), so an autonomous run behaves identically to a
+  // human-driven one rather than needing parallel turn-execution logic.
+  // Deliberately doesn't call indexMessage for the synthesized prompt text
+  // itself — it's loop bookkeeping ("current task: ..."), not something a
+  // future search_memory query should ever want back.
+  const runAutonomousTurn = useCallback(
+    async (promptText: string): Promise<{ content: string; toolNames: string[] }> => {
+      if (!conversation) throw new Error('runAutonomousTurn: no active conversation');
+      const userMessage: Message = { id: makeId(), role: 'user', content: promptText, createdAt: Date.now() };
+      const messages = [...conversation.messages, userMessage];
+      onMessagesChange(conversation.id, messages);
+      lastTurnResultRef.current = null;
+      await beginTurn(messages);
+      return lastTurnResultRef.current ?? { content: '', toolNames: [] };
+    },
+    [conversation, onMessagesChange, beginTurn]
+  );
 
   // Called after "Save as custom model" — re-saving over an existing custom
   // model's name (iterating on a persona) would otherwise keep serving the
@@ -480,5 +587,6 @@ export function useChat({ baseUrl, conversation, onMessagesChange, disabledTools
     continueTurn,
     canContinue: pausedMessages !== null,
     invalidateModelSystemCache,
+    runAutonomousTurn,
   };
 }

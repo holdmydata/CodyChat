@@ -173,6 +173,28 @@ export async function createModel(
   }
 }
 
+// Ollama's /api/embed (not the deprecated singular /api/embeddings, which
+// uses a different request/response shape) — confirmed live against this
+// machine's real Ollama before writing this, not assumed from docs. Response
+// is always { embeddings: number[][] }, one vector per input, even for a
+// single string.
+export async function embedText(baseUrl: string, model: string, input: string): Promise<number[]> {
+  const res = await fetch(`${baseUrl}/api/embed`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, input }),
+  });
+  if (!res.ok) {
+    throw new OllamaError(`Failed to embed text: ${res.status} ${res.statusText}`);
+  }
+  const data = await res.json();
+  const vec = data.embeddings?.[0];
+  if (!Array.isArray(vec)) {
+    throw new OllamaError('Embed response missing embeddings[0]');
+  }
+  return vec;
+}
+
 // Streams a chat completion, invoking onToken for each content delta.
 // Resolves with the full assembled response text once the stream ends.
 export async function streamChat({

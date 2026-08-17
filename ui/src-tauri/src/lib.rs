@@ -1,5 +1,7 @@
 mod commands;
+mod loopx;
 mod mcp;
+mod memory;
 mod skills;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -325,6 +327,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(AlwaysOnTop(AtomicBool::new(false)))
         .manage(FullMode(AtomicBool::new(false)))
         .manage(mcp::McpState::new())
@@ -348,6 +351,15 @@ pub fn run() {
 
             #[cfg(target_os = "windows")]
             force_dwm_frame_recalc(&window);
+
+            // The first Rust-backend-owned persistent file this app
+            // creates — everything else app-level lives in the frontend's
+            // localStorage. app_data_dir() needs the AppHandle, which only
+            // exists inside .setup(), so this can't happen at .manage()
+            // call time the way AlwaysOnTop/FullMode/McpState do above.
+            let memory_dir = app.path().app_data_dir()?;
+            let memory_conn = memory::init_db(&memory_dir)?;
+            app.manage(memory::MemoryState(std::sync::Mutex::new(memory_conn)));
 
             // Starts as the compact widget, not the old half-screen
             // default — the widget is the primary surface now; the
@@ -431,6 +443,9 @@ pub fn run() {
             commands::get_loopx_digest,
             commands::get_environment_info,
             commands::read_theme_pack,
+            loopx::loopx_complete_todo,
+            loopx::loopx_refresh_state,
+            loopx::loopx_spend_slot,
             skills::read_file,
             skills::write_file,
             skills::edit_file,
@@ -441,6 +456,11 @@ pub fn run() {
             mcp::mcp_connect,
             mcp::mcp_disconnect,
             mcp::mcp_call_tool,
+            memory::index_memory_item,
+            memory::search_memory,
+            memory::get_memory_graph,
+            memory::get_memory_item,
+            memory::delete_memory_item,
             close_to_tray,
             expand_window,
             collapse_window,

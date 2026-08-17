@@ -20,15 +20,49 @@ use serde_json::json;
 const MAX_READ_BYTES: usize = 200_000;
 const MAX_DIR_ENTRIES: usize = 500;
 
+// `source_type` is the single source of truth for how this file's content
+// was read — the frontend's optional "remember" indexing step (see
+// lib/skills.ts) tags the memory entry with this rather than re-deriving
+// the file type itself from the extension a second time.
+#[derive(Serialize)]
+pub struct ReadFileResult {
+    content: String,
+    source_type: String,
+}
+
 #[tauri::command]
-pub fn read_file(path: String) -> Result<String, String> {
+pub fn read_file(path: String) -> Result<ReadFileResult, String> {
     let p = Path::new(&path);
     if !p.is_file() {
         return Err(format!("not a file: {path}"));
     }
+
+    let is_pdf = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("pdf"));
+
+    if is_pdf {
+        // pdf_extract does real layout-aware text extraction (not just a
+        // raw byte dump — PDFs aren't UTF-8 text) — confirmed against the
+        // crate's real 0.7.12 source (extract_text's signature/error type)
+        // before writing this, same discipline as everything else built
+        // this session.
+        let text = pdf_extract::extract_text(p).map_err(|e| format!("failed to extract PDF text: {e}"))?;
+        let bytes = text.into_bytes();
+        let truncated = &bytes[..bytes.len().min(MAX_READ_BYTES)];
+        return Ok(ReadFileResult {
+            content: String::from_utf8_lossy(truncated).into_owned(),
+            source_type: "pdf".to_string(),
+        });
+    }
+
     let bytes = fs::read(p).map_err(|e| e.to_string())?;
     let truncated = &bytes[..bytes.len().min(MAX_READ_BYTES)];
-    Ok(String::from_utf8_lossy(truncated).into_owned())
+    Ok(ReadFileResult {
+        content: String::from_utf8_lossy(truncated).into_owned(),
+        source_type: "text_file".to_string(),
+    })
 }
 
 #[tauri::command]
@@ -366,11 +400,12 @@ pub fn get_tool_definitions() -> serde_json::Value {
             "type": "function",
             "function": {
                 "name": "read_file",
-                "description": "Read the contents of a text file from disk.",
+                "description": "Read the contents of a text file from disk. PDF files are automatically text-extracted (not read as raw bytes).",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "path": {"type": "string", "description": "Absolute path to the file to read"}
+                        "path": {"type": "string", "description": "Absolute path to the file to read"},
+                        "remember": {"type": "boolean", "description": "Set true to also save this file's content into long-term memory for later recall via search_memory (e.g. when the user asks you to remember/save a document). Defaults to false — reading a file does not save it unless explicitly asked."}
                     },
                     "required": ["path"]
                 }
@@ -385,7 +420,9 @@ pub fn get_tool_definitions() -> serde_json::Value {
                     "type": "object",
                     "properties": {
                         "path": {"type": "string", "description": "Absolute path to the file to write"},
-                        "content": {"type": "string", "description": "Full text content to write"}
+                        "content": {"type": "string", "description": "Full text content to write"},
+                        "remember": {"type": "boolean", "description": "Set true to also save this file's content into long-term memory for later recall via search_memory. Defaults to false — writing a file does not save it unless explicitly asked."},
+                        "memory_type": {"type": "string", "enum": ["build_output", "learned_reference"], "description": "Only used when remember is true. 'build_output': a real artifact you created (code, a document, a finished task output). 'learned_reference': a distilled summary you wrote specifically so a future turn can search_memory instead of re-reading a large source (e.g. after reading a big doc once, write a concise reference covering what it actually needs). Defaults to 'build_output' if omitted."}
                     },
                     "required": ["path", "content"]
                 }
@@ -452,6 +489,22 @@ pub fn get_tool_definitions() -> serde_json::Value {
                         "working_dir": {"type": "string", "description": "Optional absolute path to run the command from"}
                     },
                     "required": ["command"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "search_memory",
+                "description": "Search past conversations and remembered documents for relevant context using semantic similarity. Use this when the user references something discussed before, asks you to recall prior context or a saved document, or when earlier history would help answer the current question. Returns the most relevant matches, most similar first.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "What to search for, in natural language"},
+                        "top_k": {"type": "integer", "description": "Maximum number of results to return (default 5)"},
+                        "source_type": {"type": "string", "description": "Optional: narrow the search to one source type, e.g. 'pdf' to search only remembered PDFs, or 'chat_message' to search only past conversations. Omit to search everything."}
+                    },
+                    "required": ["query"]
                 }
             }
         }

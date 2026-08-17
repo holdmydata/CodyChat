@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect } from 'react';
 import type { Conversation, ToolCall } from '../types';
 import type { ActivityStep } from '../hooks/useChat';
+import type { LoopState } from '../hooks/useAutonomousLoop';
 import { ModelPicker } from './ModelPicker';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
@@ -26,6 +27,11 @@ interface ChatWindowProps {
   compact?: boolean;
   /** Bumped by Settings → General's "Save as custom model" so the picker refreshes without needing to be the one that triggered the save. */
   modelListRefreshKey?: number;
+  /** Autonomous loop status (see useAutonomousLoop.ts) — shown as a band above the input, same treatment as chat-window__continue, since a run happening here is just a normal turn started from loopx state instead of typed input. */
+  loopState?: LoopState;
+  loopStopReason?: string | null;
+  loopTodosCompleted?: number;
+  onStopLoop?: () => void;
 }
 
 export function ChatWindow({
@@ -44,6 +50,10 @@ export function ChatWindow({
   onContinue,
   compact,
   modelListRefreshKey,
+  loopState = 'idle',
+  loopStopReason,
+  loopTodosCompleted = 0,
+  onStopLoop,
 }: ChatWindowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Only auto-follow new content if the user is already near the bottom —
@@ -129,6 +139,22 @@ export function ChatWindow({
 
       {pendingToolCall && (
         <ToolApprovalPrompt call={pendingToolCall} onApprove={onApproveToolCall} onDeny={onDenyToolCall} />
+      )}
+
+      {loopState !== 'idle' && (
+        <div className={`chat-window__continue chat-window__loop-status chat-window__loop-status--${loopState}`}>
+          <span>
+            {loopState === 'fetching' && 'Autonomous run: checking loopx for the next todo…'}
+            {loopState === 'running' && `Autonomous run: working (${loopTodosCompleted} completed so far)…`}
+            {loopState === 'reporting' && 'Autonomous run: reporting evidence back to loopx…'}
+            {loopState === 'stopped' && `Autonomous run stopped: ${loopStopReason ?? 'unknown reason'}`}
+          </span>
+          {loopState !== 'stopped' && onStopLoop && (
+            <button type="button" onClick={onStopLoop}>
+              Stop
+            </button>
+          )}
+        </div>
       )}
 
       {!isStreaming && !pendingToolCall && canContinue && (

@@ -50,6 +50,8 @@ export interface Conversation {
   messages: Message[];
   createdAt: number;
   updatedAt: number;
+  /** When true, this conversation's messages are never indexed into vector memory (see lib/memory.ts). Undefined/false means indexing is on, same as every existing stored conversation before this field existed. */
+  memoryDisabled?: boolean;
 }
 
 export const DEFAULT_PARAMS: ChatParams = {

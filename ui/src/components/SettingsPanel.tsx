@@ -14,6 +14,8 @@ interface SettingsPanelProps {
   params: ChatParams;
   onParamsChange: (params: ChatParams) => void;
   onModelCreated?: () => void;
+  memoryDisabled: boolean;
+  onMemoryDisabledChange: (disabled: boolean) => void;
 }
 
 const FALLBACK_MAX_CTX = 32768;
@@ -32,6 +34,8 @@ export function SettingsPanel({
   params,
   onParamsChange,
   onModelCreated,
+  memoryDisabled,
+  onMemoryDisabledChange,
 }: SettingsPanelProps) {
   const [modelInfo, setModelInfo] = useState<ModelInfo | null>(null);
   const [modelInfoError, setModelInfoError] = useState<string | null>(null);
@@ -182,6 +186,28 @@ export function SettingsPanel({
           rows={4}
         />
       </label>
+
+      <div className="settings-menu__tool-row">
+        <div className="settings-menu__tool-info">
+          <div className="settings-menu__tool-name">
+            <span>Save this conversation to memory</span>
+          </div>
+          <p className="settings-menu__tool-desc">
+            When on, your messages and the model's replies here are indexed for cross-conversation recall (see
+            search_memory in Settings → Tools). Turn off to keep this conversation out of memory entirely — this
+            only affects new messages going forward, not ones already indexed.
+          </p>
+        </div>
+        <label className="settings-menu__toggle">
+          <input
+            type="checkbox"
+            checked={!memoryDisabled}
+            onChange={(e) => onMemoryDisabledChange(!e.target.checked)}
+            aria-label={`${memoryDisabled ? 'Enable' : 'Disable'} saving this conversation to memory`}
+          />
+          <span className="settings-menu__toggle-track" aria-hidden="true" />
+        </label>
+      </div>
 
       <div className="settings-panel__field">
         <span>Save model settings</span>

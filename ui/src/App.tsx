@@ -5,10 +5,12 @@ import './App.css';
 import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
 import { LoopxDigest } from './components/LoopxDigest';
+import { MemoryGraphView } from './components/MemoryGraphView';
 import { ThemePicker } from './components/ThemePicker';
 import { SettingsMenu } from './components/SettingsMenu';
 import { useConversations } from './hooks/useConversations';
 import { useChat } from './hooks/useChat';
+import { useAutonomousLoop } from './hooks/useAutonomousLoop';
 import { useMcpServers } from './hooks/useMcpServers';
 import {
   applyFontOverride,
@@ -21,7 +23,7 @@ import {
   setActiveThemeId,
 } from './lib/themes';
 import { getToolDefinitions, type ToolDefinition } from './lib/skills';
-import { loadDisabledTools, saveDisabledTools } from './lib/toolConfig';
+import { loadDisabledTools, saveDisabledTools, loadAutoApproveReadOnly, saveAutoApproveReadOnly } from './lib/toolConfig';
 import { DEFAULT_PARAMS } from './types';
 
 // Only used for the very first conversation ever created, before any model
@@ -111,6 +113,15 @@ function App() {
     });
   }, []);
 
+  const [autoApproveReadOnly, setAutoApproveReadOnly] = useState<boolean>(loadAutoApproveReadOnly);
+  const toggleAutoApproveReadOnly = useCallback(() => {
+    setAutoApproveReadOnly((prev) => {
+      const next = !prev;
+      saveAutoApproveReadOnly(next);
+      return next;
+    });
+  }, []);
+
   const [baseUrl, setBaseUrl] = useState(
     () => localStorage.getItem(BASE_URL_KEY) || 'http://localhost:11434'
   );
@@ -167,7 +178,7 @@ function App() {
     saveFontOverride(trimmed || null);
   }, []);
 
-  type MainView = 'chat' | 'digest' | 'settings';
+  type MainView = 'chat' | 'digest' | 'settings' | 'memory-graph';
   const [mainView, setMainView] = useState<MainView>('chat');
   const toggleView = useCallback((view: MainView) => {
     setMainView((current) => (current === view ? 'chat' : view));
@@ -201,13 +212,53 @@ function App() {
     continueTurn,
     canContinue,
     invalidateModelSystemCache,
+    runAutonomousTurn,
   } = useChat({
     baseUrl,
     conversation: active,
     onMessagesChange: setMessages,
     disabledTools,
     mcpTools: mcp.mcpToolDefs,
+    autoApproveReadOnly,
   });
+
+  const autonomousLoop = useAutonomousLoop({ runAutonomousTurn, baseUrl });
+  // Starting a run needs a real conversation for runAutonomousTurn to drive
+  // turns in — reuses the active one if there is one, otherwise creates a
+  // fresh one first, same as how a normal first message would. The loop's
+  // own state (fetching/running/reporting/stopped) is then visible directly
+  // in that conversation's ChatWindow, not a separate hidden panel — an
+  // autonomous run is meant to look like a normal chat happening on its own.
+  //
+  // Real timing gap this handles: createConversation() updates state
+  // asynchronously, but runAutonomousTurn's closure only picks up the new
+  // `active` conversation after the next render — calling
+  // autonomousLoop.start() synchronously right after createConversation()
+  // would still capture the *old* (null) conversation and fail immediately.
+  // pendingAutoStart bridges that gap: recorded when a fresh conversation
+  // was needed, consumed by the effect below once `active` actually
+  // reflects it.
+  const [pendingAutoStart, setPendingAutoStart] = useState<{ goalId: string; maxTodos: number } | null>(null);
+  const startAutonomousLoop = useCallback(
+    (goalId: string, maxTodos: number) => {
+      if (!active) {
+        createConversation();
+        setPendingAutoStart({ goalId, maxTodos });
+      } else {
+        autonomousLoop.start(goalId, maxTodos);
+      }
+    },
+    [active, createConversation, autonomousLoop]
+  );
+
+  useEffect(() => {
+    if (pendingAutoStart && active) {
+      const { goalId, maxTodos } = pendingAutoStart;
+      setPendingAutoStart(null);
+      autonomousLoop.start(goalId, maxTodos);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingAutoStart, active]);
 
   // The Approve/Deny buttons on the real OS toast (notify_pending_approval
   // in lib.rs) fire this event rather than calling back through invoke() —
@@ -257,6 +308,15 @@ function App() {
         >
           📋
         </button>
+        <button
+          type="button"
+          className="titlebar__memory-graph-toggle"
+          onClick={() => toggleView('memory-graph')}
+          aria-label={mainView === 'memory-graph' ? 'Show chat' : 'Show memory graph'}
+          title={mainView === 'memory-graph' ? 'Show chat' : 'Show memory graph'}
+        >
+          🕸️
+        </button>
         <ThemePicker activeId={themeId} onSelect={handleThemeSelect} />
         <button
           type="button"
@@ -294,7 +354,16 @@ function App() {
       </div>
       <div className="app">
         {mainView === 'digest' ? (
-          <LoopxDigest />
+          <LoopxDigest
+            loopState={autonomousLoop.state}
+            stopReason={autonomousLoop.stopReason}
+            todosCompleted={autonomousLoop.todosCompleted}
+            currentGoalId={autonomousLoop.currentGoalId}
+            onStart={startAutonomousLoop}
+            onStop={autonomousLoop.stop}
+          />
+        ) : mainView === 'memory-graph' ? (
+          <MemoryGraphView />
         ) : mainView === 'settings' ? (
           <SettingsMenu
             baseUrl={baseUrl}
@@ -306,6 +375,8 @@ function App() {
             tools={toolDefs}
             disabledTools={disabledTools}
             onToggleTool={toggleTool}
+            autoApproveReadOnly={autoApproveReadOnly}
+            onToggleAutoApproveReadOnly={toggleAutoApproveReadOnly}
             mcpServers={mcp.servers}
             mcpStatusById={mcp.statusById}
             onAddMcpServer={mcp.addServer}
@@ -319,6 +390,8 @@ function App() {
             onSystemPromptChange={(systemPrompt) => active && updateConversation(active.id, { systemPrompt })}
             params={active?.params ?? DEFAULT_PARAMS}
             onParamsChange={(params) => active && updateConversation(active.id, { params })}
+            memoryDisabled={active?.memoryDisabled ?? false}
+            onMemoryDisabledChange={(memoryDisabled) => active && updateConversation(active.id, { memoryDisabled })}
             onModelCreated={() => {
               setModelListRefreshKey((k) => k + 1);
               invalidateModelSystemCache();
@@ -355,6 +428,10 @@ function App() {
                 onContinue={continueTurn}
                 compact={!isExpanded}
                 modelListRefreshKey={modelListRefreshKey}
+                loopState={autonomousLoop.state}
+                loopStopReason={autonomousLoop.stopReason}
+                loopTodosCompleted={autonomousLoop.todosCompleted}
+                onStopLoop={autonomousLoop.stop}
               />
             ) : (
               <div className="app__empty">
