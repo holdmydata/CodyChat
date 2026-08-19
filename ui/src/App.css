@@ -86,6 +86,7 @@ input[type='range']::-moz-range-thumb:hover {
 .titlebar__memory-graph-toggle,
 .titlebar__theme-toggle,
 .titlebar__settings-toggle,
+.titlebar__duck-toggle,
 .titlebar__expand-toggle,
 .titlebar__close {
   display: inline-flex;
@@ -135,6 +136,17 @@ input[type='range']::-moz-range-thumb:hover {
 }
 
 .titlebar__settings-toggle {
+  app-region: no-drag;
+  height: 100%;
+  padding: 0 10px;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.titlebar__duck-toggle {
   app-region: no-drag;
   height: 100%;
   padding: 0 10px;
@@ -362,6 +374,73 @@ input[type='range']::-moz-range-thumb:hover {
 }
 
 /* Chat window */
+
+/* Right-side docked panel for the companion duck — not a second Tauri
+   window (see DuckPanel.tsx's own comment for why). Always in the DOM,
+   visibility/position driven entirely by the --open modifier so both open
+   and close animate symmetrically via the same transform transition,
+   rather than only having an entrance animation like most of this app's
+   other mount-triggered ones. pointer-events off while closed so it can't
+   eat clicks from behind its off-screen position. */
+.duck-panel {
+  position: fixed;
+  top: 28px;
+  right: 0;
+  bottom: 0;
+  width: min(340px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-left: 2px solid var(--accent-border);
+  box-shadow: -12px 0 32px 0 rgba(0, 0, 0, 0.28);
+  z-index: 30;
+  transform: translateX(100%);
+  transition: transform 0.25s ease;
+  pointer-events: none;
+}
+
+.duck-panel--open {
+  transform: translateX(0);
+  pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .duck-panel {
+    transition: none;
+  }
+}
+
+.duck-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--accent-border);
+  flex-shrink: 0;
+}
+
+.duck-panel__title {
+  font-weight: 600;
+  color: var(--text-h);
+}
+
+.duck-panel__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.duck-panel__close:hover {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
 
 .chat-window {
   flex: 1;

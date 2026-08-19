@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { ListTodo, Maximize2, Minimize2, Network, PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
+import { Bird, ListTodo, Maximize2, Minimize2, Network, PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
 import './App.css';
 import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
+import { DuckPanel } from './components/DuckPanel';
 import { LoopxDigest } from './components/LoopxDigest';
 import { MemoryGraphView } from './components/MemoryGraphView';
 import { ThemePicker } from './components/ThemePicker';
@@ -196,6 +197,11 @@ function App() {
     setMainView((current) => (current === view ? 'chat' : view));
   }, []);
 
+  // Companion duck panel — session-only, not persisted (unlike sidebarCollapsed/
+  // themeId), since there's no strong reason it should default open on next launch.
+  const [isDuckOpen, setIsDuckOpen] = useState(false);
+  const toggleDuck = useCallback(() => setIsDuckOpen((v) => !v), []);
+
   const handleBaseUrlChange = useCallback((url: string) => {
     setBaseUrl(url);
     localStorage.setItem(BASE_URL_KEY, url);
@@ -339,7 +345,15 @@ function App() {
         >
           <Settings size={16} />
         </button>
-        {/* TODO: Add roaming duck on the titlebar, no need to have Tauri version but can keep appInfo version */}
+        <button
+          type="button"
+          className={`titlebar__duck-toggle${isDuckOpen ? ' titlebar__icon-btn--active' : ''}`}
+          onClick={toggleDuck}
+          aria-label={isDuckOpen ? 'Close companion duck' : 'Open companion duck'}
+          title={isDuckOpen ? 'Close companion duck' : 'Open companion duck'}
+        >
+          <Bird size={16} />
+        </button>
         {appInfo && (
           <span className="titlebar__info">
             CodyChat - v{appInfo.version} · Tauri {appInfo.tauriVersion}
@@ -459,6 +473,7 @@ function App() {
           </>
         )}
       </div>
+      <DuckPanel open={isDuckOpen} onClose={() => setIsDuckOpen(false)} baseUrl={baseUrl} defaultModel={active?.model ?? ''} />
     </div>
   );
 }
