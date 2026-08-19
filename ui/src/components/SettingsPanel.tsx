@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { createModel, showModel, type ModelInfo } from '../lib/ollama';
+import { createModel, listModels, showModel, type ModelInfo } from '../lib/ollama';
+import { forecastFit, getSystemResources, type SystemResources } from '../lib/resourceForecast';
 import { ModelPicker } from './ModelPicker';
 import type { ChatParams } from '../types';
 
@@ -51,6 +52,39 @@ export function SettingsPanel({
   const [saveName, setSaveName] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [resources, setResources] = useState<SystemResources | null>(null);
+  const [modelSizeBytes, setModelSizeBytes] = useState<number | null>(null);
+
+  // RAM/VRAM is machine state, not per-conversation — fetched once, not
+  // re-fetched on every model switch (unlike modelInfo/modelSizeBytes
+  // below, which really do change per model).
+  useEffect(() => {
+    getSystemResources()
+      .then(setResources)
+      .catch(() => setResources(null));
+  }, []);
+
+  // /api/show (showModel, below) doesn't return the on-disk byte size —
+  // only /api/tags (listModels) does, keyed by name, so this is a second
+  // fetch rather than folding it into the existing showModel effect.
+  useEffect(() => {
+    if (!model) {
+      setModelSizeBytes(null);
+      return;
+    }
+    let cancelled = false;
+    listModels(baseUrl)
+      .then((list) => {
+        if (cancelled) return;
+        setModelSizeBytes(list.find((m) => m.name === model)?.size ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setModelSizeBytes(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseUrl, model]);
 
   useEffect(() => {
     if (!model) return;
@@ -106,6 +140,10 @@ export function SettingsPanel({
   // instead, and only sanitize when actually saving a new/different name.
   const trimmedSaveName = saveName.trim();
   const isUpdate = trimmedSaveName === model && model !== '';
+  const forecast =
+    modelSizeBytes != null && resources && modelInfo
+      ? forecastFit(modelSizeBytes, params.numCtx, modelInfo.arch, resources)
+      : null;
 
   const handleSave = async () => {
     const name = isUpdate ? model : sanitizeModelName(saveName);
@@ -279,6 +317,12 @@ export function SettingsPanel({
           onChange={(e) => onParamsChange({ ...params, numCtx: Number(e.target.value) })}
         />
       </label>
+
+      {forecast && (
+        <p className={`settings-panel__resource-forecast settings-panel__resource-forecast--${forecast.verdict}`}>
+          {forecast.summary}
+        </p>
+      )}
     </div>
   );
 }

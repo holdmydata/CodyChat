@@ -22,12 +22,17 @@ export interface ThemePack {
    * Overrides --sans (the app's UI font stack) for this pack. The one
    * non-color value a pack is allowed to set — deliberately not part of
    * `vars` below, since it isn't a color and needs its own validation.
-   * These are Google Fonts names, not bundled with the app (this stays
-   * offline-first rather than fetching webfonts over the network for a
-   * cosmetic feature) — they only render if actually installed locally,
-   * otherwise the rest of the stack's fallbacks apply. Should be a full
-   * font-family value including fallbacks, e.g.
-   * `"'Quicksand', system-ui, sans-serif"`.
+   * These are Google Fonts names — three of the ones the built-in packs
+   * actually request (Quicksand, Fredoka, Nunito Sans) are now bundled
+   * locally (see index.css's @font-face rules + public/fonts/, all
+   * confirmed OFL-licensed before vendoring), so those are guaranteed to
+   * render regardless of what's installed on the machine. Anything else —
+   * M PLUS Rounded 1c included, skipped as a bundle candidate purely on
+   * file-size grounds (3.4MB for one static weight, no variable-font
+   * option) — still only renders if actually installed locally, otherwise
+   * the rest of the stack's fallbacks apply. Still fully offline (no
+   * runtime webfont fetch either way). Should be a full font-family value
+   * including fallbacks, e.g. `"'Quicksand', system-ui, sans-serif"`.
    */
   font?: string;
   /**

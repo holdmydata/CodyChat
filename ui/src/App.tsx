@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { ListTodo, Maximize2, Minimize2, Network, PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
 import './App.css';
 import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
@@ -22,6 +23,7 @@ import {
   saveFontOverride,
   setActiveThemeId,
 } from './lib/themes';
+import { getPresentationMode, setPresentationMode, type PresentationMode } from './lib/presentation';
 import { getToolDefinitions, type ToolDefinition } from './lib/skills';
 import { loadDisabledTools, saveDisabledTools, loadAutoApproveReadOnly, saveAutoApproveReadOnly } from './lib/toolConfig';
 import { DEFAULT_PARAMS } from './types';
@@ -159,6 +161,16 @@ function App() {
     setActiveThemeId(id);
   }, []);
 
+  // Same relationship theme packs have to color/font, one level up: which
+  // paradigm renders the message history (today: only 'flat' vs 'spatial').
+  // App-level like themeId, not per-conversation — see lib/presentation.ts.
+  const [presentationMode, setPresentationModeState] = useState(getPresentationMode);
+
+  const handlePresentationModeSelect = useCallback((mode: PresentationMode) => {
+    setPresentationModeState(mode);
+    setPresentationMode(mode);
+  }, []);
+
   // A manual font override always wins over whatever the active pack asks
   // for — separate from theme packs entirely (survives switching packs)
   // since "the fonts packs ask for (Google Fonts) aren't installed on this
@@ -278,11 +290,11 @@ function App() {
   }, [approveToolCall, denyToolCall]);
 
   const handleSend = useCallback(
-    (content: string) => {
+    (content: string, images?: string[]) => {
       if (active && active.messages.length === 0 && active.title === 'New chat') {
         updateConversation(active.id, { title: deriveTitle(content) });
       }
-      sendMessage(content);
+      sendMessage(content, images);
     },
     [active, updateConversation, sendMessage]
   );
@@ -297,35 +309,35 @@ function App() {
           aria-label={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
           title={sidebarCollapsed ? 'Show sidebar' : 'Hide sidebar'}
         >
-          ☰
+          {sidebarCollapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>
         <button
           type="button"
-          className="titlebar__digest-toggle"
+          className={`titlebar__digest-toggle${mainView === 'digest' ? ' titlebar__icon-btn--active' : ''}`}
           onClick={() => toggleView('digest')}
           aria-label={mainView === 'digest' ? 'Show chat' : 'Show tasks'}
           title={mainView === 'digest' ? 'Show chat' : 'Show tasks'}
         >
-          📋
+          <ListTodo size={16} />
         </button>
         <button
           type="button"
-          className="titlebar__memory-graph-toggle"
+          className={`titlebar__memory-graph-toggle${mainView === 'memory-graph' ? ' titlebar__icon-btn--active' : ''}`}
           onClick={() => toggleView('memory-graph')}
           aria-label={mainView === 'memory-graph' ? 'Show chat' : 'Show memory graph'}
           title={mainView === 'memory-graph' ? 'Show chat' : 'Show memory graph'}
         >
-          🕸️
+          <Network size={16} />
         </button>
         <ThemePicker activeId={themeId} onSelect={handleThemeSelect} />
         <button
           type="button"
-          className="titlebar__settings-toggle"
+          className={`titlebar__settings-toggle${mainView === 'settings' ? ' titlebar__icon-btn--active' : ''}`}
           onClick={() => toggleView('settings')}
           aria-label={mainView === 'settings' ? 'Show chat' : 'Settings'}
           title={mainView === 'settings' ? 'Show chat' : 'Settings'}
         >
-          ⚙
+          <Settings size={16} />
         </button>
         {/* TODO: Add roaming duck on the titlebar, no need to have Tauri version but can keep appInfo version */}
         {appInfo && (
@@ -340,7 +352,7 @@ function App() {
           aria-label={isExpanded ? 'Collapse to widget' : 'Expand to full window'}
           title={isExpanded ? 'Collapse to widget' : 'Expand to full window'}
         >
-          {isExpanded ? '⤡' : '⤢'}
+          {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </button>
         <button
           type="button"
@@ -349,7 +361,7 @@ function App() {
           aria-label="Close to tray"
           title="Close to tray"
         >
-          ✕
+          <X size={16} />
         </button>
       </div>
       <div className="app">
@@ -372,6 +384,8 @@ function App() {
             tauriVersion={appInfo?.tauriVersion}
             themeId={themeId}
             onThemeSelect={handleThemeSelect}
+            presentationMode={presentationMode}
+            onPresentationModeSelect={handlePresentationModeSelect}
             tools={toolDefs}
             disabledTools={disabledTools}
             onToggleTool={toggleTool}
@@ -385,6 +399,8 @@ function App() {
             onDisconnectMcpServer={mcp.disconnect}
             activeModel={active?.model ?? ''}
             onModelChange={(model) => active && updateConversation(active.id, { model })}
+            hasActiveConversation={!!active}
+            onStartNewChat={() => createConversation()}
             modelListRefreshKey={modelListRefreshKey}
             systemPrompt={active?.systemPrompt ?? ''}
             onSystemPromptChange={(systemPrompt) => active && updateConversation(active.id, { systemPrompt })}
@@ -432,6 +448,7 @@ function App() {
                 loopStopReason={autonomousLoop.stopReason}
                 loopTodosCompleted={autonomousLoop.todosCompleted}
                 onStopLoop={autonomousLoop.stop}
+                presentationMode={presentationMode}
               />
             ) : (
               <div className="app__empty">

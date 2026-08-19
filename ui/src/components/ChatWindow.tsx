@@ -2,11 +2,13 @@ import { useRef, useState, useEffect } from 'react';
 import type { Conversation, ToolCall } from '../types';
 import type { ActivityStep } from '../hooks/useChat';
 import type { LoopState } from '../hooks/useAutonomousLoop';
+import type { PresentationMode } from '../lib/presentation';
 import { ModelPicker } from './ModelPicker';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { ToolApprovalPrompt } from './ToolApprovalPrompt';
 import { TurnFlowGraph } from './ActivityTracker';
+import { ChatHistory3D } from './ChatHistory3D';
 
 interface ChatWindowProps {
   conversation: Conversation;
@@ -14,7 +16,7 @@ interface ChatWindowProps {
   onModelChange: (model: string) => void;
   isStreaming: boolean;
   error: string | null;
-  onSend: (content: string) => void;
+  onSend: (content: string, images?: string[]) => void;
   onStop: () => void;
   pendingToolCall: ToolCall | null;
   onApproveToolCall: () => void;
@@ -32,6 +34,8 @@ interface ChatWindowProps {
   loopStopReason?: string | null;
   loopTodosCompleted?: number;
   onStopLoop?: () => void;
+  /** Swaps the message-history region only — header, approval prompts, and the input box stay unconditionally 2D regardless of mode. */
+  presentationMode: PresentationMode;
 }
 
 export function ChatWindow({
@@ -54,6 +58,7 @@ export function ChatWindow({
   loopStopReason,
   loopTodosCompleted = 0,
   onStopLoop,
+  presentationMode,
 }: ChatWindowProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   // Only auto-follow new content if the user is already near the bottom —
@@ -83,13 +88,51 @@ export function ChatWindow({
     }
   }, [conversation.messages]);
 
+  // Pasted images decode/lay out asynchronously — by the time one finishes
+  // loading and grows the message list's real height, the scroll-to-bottom
+  // effect above already ran against the pre-image height, silently
+  // leaving the view short of the true bottom. Re-runs the same pinned
+  // scroll once any still-loading image in the list settles.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const rescroll = () => {
+      if (shouldAutoScrollRef.current) el.scrollTo({ top: el.scrollHeight });
+    };
+    const images = Array.from(el.querySelectorAll('img')).filter((img) => !img.complete);
+    images.forEach((img) => img.addEventListener('load', rescroll, { once: true }));
+    return () => images.forEach((img) => img.removeEventListener('load', rescroll));
+  }, [conversation.messages]);
+
+  // Real, reported bug: "Jump to Latest" would pop up right when
+  // approving/denying a tool call. Root cause is layout, not scroll logic —
+  // ToolApprovalPrompt (and the autonomous-loop/Continue bands) are flex
+  // siblings of this scroll container, not children of it, so when one
+  // mounts or unmounts it resizes the *container's own* clientHeight
+  // (squeezed while a prompt is showing, released once it's gone). That
+  // changes distanceFromBottom's arithmetic without ever moving scrollTop,
+  // so it isn't caught by the effects above (keyed on message content) or
+  // by handleMessagesScroll (only runs on an actual scroll event, which a
+  // pure sibling resize doesn't necessarily fire). A ResizeObserver on the
+  // container itself catches this directly, and generalizes to every other
+  // sibling band that comes and goes the same way, not just this one.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => {
+      if (shouldAutoScrollRef.current) el.scrollTo({ top: el.scrollHeight });
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => {
     setAutoScrollValue(true);
   }, [conversation.id]);
 
-  const handleSend = (content: string) => {
+  const handleSend = (content: string, images?: string[]) => {
     setAutoScrollValue(true);
-    onSend(content);
+    onSend(content, images);
   };
 
   const jumpToBottom = () => {
@@ -110,30 +153,34 @@ export function ChatWindow({
         </header>
       )}
 
-      <div className="chat-window__messages-wrap">
-        <div className="chat-window__messages" ref={scrollRef} onScroll={handleMessagesScroll}>
-          {conversation.messages.length === 0 && (
-            <div className="chat-window__empty">Say something to get started.</div>
+      {presentationMode === 'spatial' ? (
+        <ChatHistory3D conversation={conversation} isStreaming={isStreaming} error={error} />
+      ) : (
+        <div className="chat-window__messages-wrap">
+          <div className="chat-window__messages" ref={scrollRef} onScroll={handleMessagesScroll}>
+            {conversation.messages.length === 0 && (
+              <div className="chat-window__empty">Say something to get started.</div>
+            )}
+            {conversation.messages.map((m, i) => (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                isStreaming={isStreaming && i === conversation.messages.length - 1}
+              />
+            ))}
+            {error && <div className="chat-window__error">{error}</div>}
+          </div>
+          {!autoScroll && (
+            <button
+              type="button"
+              className="chat-window__jump-to-bottom"
+              onClick={jumpToBottom}
+            >
+              ↓ Jump to latest
+            </button>
           )}
-          {conversation.messages.map((m, i) => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              isStreaming={isStreaming && i === conversation.messages.length - 1}
-            />
-          ))}
-          {error && <div className="chat-window__error">{error}</div>}
         </div>
-        {!autoScroll && (
-          <button
-            type="button"
-            className="chat-window__jump-to-bottom"
-            onClick={jumpToBottom}
-          >
-            ↓ Jump to latest
-          </button>
-        )}
-      </div>
+      )}
 
       {isStreaming && <TurnFlowGraph steps={activitySteps} variant="live" />}
 

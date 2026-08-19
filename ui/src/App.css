@@ -1,3 +1,62 @@
+/* Every range slider in the app (Settings' Temperature/Top P/Context
+   length, the memory graph's distance field) was rendering as a bare
+   native OS slider — the one control type that had never gotten themed at
+   all. Styled globally, not per-component, so it's fixed everywhere in one
+   pass and any future slider picks it up for free — same "everything here
+   is themeable" principle as the rest of this pass. -webkit-slider-thumb/
+   -moz-range-thumb need separate rules (no shared cross-browser selector
+   exists for the thumb), so this can't be collapsed into fewer blocks. */
+input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+  outline: none;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 6px 0 color-mix(in srgb, var(--accent) 60%, transparent);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+input[type='range']::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 12px 1px color-mix(in srgb, var(--accent) 70%, transparent);
+  transform: scale(1.15);
+}
+
+input[type='range']::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border);
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 6px 0 color-mix(in srgb, var(--accent) 60%, transparent);
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+input[type='range']::-moz-range-thumb:hover {
+  box-shadow: 0 0 12px 1px color-mix(in srgb, var(--accent) 70%, transparent);
+  transform: scale(1.15);
+}
+
 .shell {
   display: flex;
   flex-direction: column;
@@ -14,6 +73,35 @@
   /* 2px accent (not the neutral --border) — a small thing that reads as a
      lot more "branded app" than "generic desktop utility". */
   border-bottom: 2px solid var(--accent-border);
+}
+
+/* Shared shape for every icon button in the titlebar (real SVG icons via
+   lucide-react now, not Unicode glyphs — see the roadmap's "real vector
+   icon set" item) — centers the icon in its click target and gives every
+   one the same hover/active transition language instead of repeating it
+   per button. Per-button rules below still own color/hover-fill specifics
+   (close's danger fill, expand's accent-on-hover, etc). */
+.titlebar__sidebar-toggle,
+.titlebar__digest-toggle,
+.titlebar__memory-graph-toggle,
+.titlebar__theme-toggle,
+.titlebar__settings-toggle,
+.titlebar__expand-toggle,
+.titlebar__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Set on whichever titlebar view-toggle button matches the currently-shown
+   mainView/presentationMode — same "which one is selected" language as the
+   sidebar's active item and the Settings active tab, now that icon-only
+   buttons no longer have distinct glyphs to lean on for that signal. */
+.titlebar__icon-btn--active {
+  color: var(--accent);
+  background: var(--accent-bg, color-mix(in srgb, var(--accent) 12%, transparent));
+  box-shadow: inset 0 -2px 0 0 var(--accent);
 }
 
 .titlebar__sidebar-toggle {
@@ -121,6 +209,16 @@
   gap: 12px;
 }
 
+/* Used inside Settings' General tab, a normal (non-flex) scrolling
+   container — the full-page .app__empty's flex:1/justify-content:center
+   would either collapse or misbehave there, so this variant drops those
+   and just keeps the shared column/gap/align-items look. */
+.app__empty--inline {
+  flex: none;
+  justify-content: flex-start;
+  padding: 16px 0;
+}
+
 /* Sidebar */
 
 .sidebar {
@@ -145,10 +243,13 @@
   cursor: pointer;
   font: inherit;
   text-align: left;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .sidebar__new:hover {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: 0 0 14px 0 color-mix(in srgb, var(--accent) 40%, transparent);
+  transform: translateY(-1px);
 }
 
 .sidebar__list {
@@ -161,7 +262,25 @@
   gap: 2px;
 }
 
+/* Same fix as .chat-history-3d__messages: a themed accent-colored thumb
+   instead of the native OS scrollbar, which reads as a stray unthemed grey
+   pill sitting right under the last conversation once the list has enough
+   items to scroll. */
+.sidebar__list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sidebar__list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar__list::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: 999px;
+}
+
 .sidebar__item {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -170,10 +289,12 @@
   border: 1px solid transparent;
   cursor: pointer;
   color: var(--text);
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
 }
 
 .sidebar__item:hover {
   background: var(--hover-bg);
+  transform: translateX(2px);
 }
 
 .sidebar__item--active {
@@ -183,6 +304,23 @@
   background: var(--selected-bg);
   border-color: var(--accent-border);
   color: var(--text-h);
+  box-shadow: 0 0 12px 0 color-mix(in srgb, var(--accent) 25%, transparent);
+}
+
+/* Left accent bar on the active item — same "which one is selected" HUD
+   language as a game menu's nav rail, glowing rather than flat so it reads
+   as "live" without animating (a persistent selection state shouldn't
+   pulse the way a demanding-attention element does). */
+.sidebar__item--active::before {
+  content: '';
+  position: absolute;
+  left: -1px;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px 1px color-mix(in srgb, var(--accent) 70%, transparent);
 }
 
 .sidebar__item-title {
@@ -207,17 +345,20 @@
 .sidebar__item-delete {
   background: none;
   border: none;
+  border-radius: 50%;
   color: inherit;
   opacity: 0.5;
   cursor: pointer;
   font-size: 16px;
   line-height: 1;
-  padding: 0 4px;
+  padding: 2px 4px;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
 }
 
 .sidebar__item-delete:hover {
   opacity: 1;
   color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
 }
 
 /* Chat window */
@@ -227,6 +368,13 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Missing this is a real bug hit live: a <canvas> element (ChatHistory3D)
+     carries a default intrinsic size before R3F's ResizeObserver corrects
+     it, and without min-height: 0 here that can inflate this flex column's
+     auto min-height past the actually-available space — "not large enough,
+     showing scrollbars" in the expanded window. .memory-graph-view (this
+     container's sibling-view equivalent) already had this; this one didn't. */
+  min-height: 0;
 }
 
 .chat-window__header {
@@ -245,10 +393,18 @@
   background: var(--bg);
   color: var(--text-h);
   cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .model-picker:hover {
   border-color: var(--accent-border);
+  box-shadow: 0 0 10px 0 color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.model-picker:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-border), 0 0 14px 0 color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .model-picker--error {
@@ -371,6 +527,42 @@
   font-family: var(--mono);
 }
 
+/* RAM/VRAM forecast — verdict-colored the same way risk badges are
+   (read/write/execute) so "will this fit" reads at a glance without
+   parsing the sentence. */
+.settings-panel__resource-forecast {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.settings-panel__resource-forecast--vram {
+  border-color: color-mix(in srgb, var(--success, #4caf6a) 40%, var(--border));
+  background: color-mix(in srgb, var(--success, #4caf6a) 10%, transparent);
+  color: var(--text-h);
+}
+
+.settings-panel__resource-forecast--vram-tight,
+.settings-panel__resource-forecast--ram-spill {
+  border-color: color-mix(in srgb, var(--warning, var(--danger)) 45%, var(--border));
+  background: color-mix(in srgb, var(--warning, var(--danger)) 10%, transparent);
+  color: var(--text-h);
+}
+
+.settings-panel__resource-forecast--too-large {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  color: var(--text-h);
+}
+
+.settings-panel__resource-forecast--vram-unknown {
+  color: var(--text);
+  opacity: 0.75;
+}
+
 .settings-panel__field .model-picker {
   width: 100%;
 }
@@ -386,6 +578,40 @@
   background: var(--bg);
   color: var(--text-h);
   resize: vertical;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.settings-panel__field input[type='text']:focus,
+.settings-panel__field textarea:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-border), 0 0 12px 0 color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* The font-override <select> (Settings → Theme) never got this — it was
+   still rendering as a bare grey native dropdown, real gap spotted live
+   after everything around it got the glow treatment. Same shape/focus
+   language as the text inputs above and .model-picker. */
+.settings-panel__field select {
+  font: inherit;
+  font-size: 13px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-h);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.settings-panel__field select:hover {
+  border-color: var(--accent-border);
+}
+
+.settings-panel__field select:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-border), 0 0 12px 0 color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .settings-panel__save-model-row {
@@ -406,10 +632,13 @@
   cursor: pointer;
   font: inherit;
   font-size: 13px;
+  transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 .settings-panel__save-model-row button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 22%, transparent);
+  box-shadow: 0 0 12px 0 color-mix(in srgb, var(--accent) 35%, transparent);
+  transform: translateY(-1px);
 }
 
 .settings-panel__save-model-row button:disabled {
@@ -577,8 +806,39 @@
   opacity: 0.85;
 }
 
+.message__tool-result-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.message__tool-result-toggle:hover {
+  opacity: 0.85;
+}
+
+.message__tool-result-toggle .message__role {
+  flex-shrink: 0;
+}
+
+.message__tool-result-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  font-size: 12px;
+  font-family: var(--mono);
+  opacity: 0.7;
+}
+
 .message__tool-result {
-  margin: 0;
+  margin: 6px 0 0;
   padding: 8px 10px;
   background: var(--code-bg);
   border-radius: 6px;
@@ -593,25 +853,72 @@
 .message__tool-call {
   margin-bottom: 6px;
   font-size: 12px;
+}
+
+.message__tool-call-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--text);
   opacity: 0.75;
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  flex-wrap: wrap;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.message__tool-call-toggle:hover {
+  opacity: 1;
 }
 
 .message__tool-call-args {
+  display: block;
+  margin-top: 4px;
   font-size: 11px;
   opacity: 0.8;
   overflow-wrap: anywhere;
 }
 
+.message__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.message__image {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  object-fit: contain;
+}
+
 /* Tool approval prompt */
+
+@keyframes tool-approval-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 
 .tool-approval {
   padding: 10px 16px;
   border-top: 1px solid var(--accent-border);
   background: var(--accent-bg);
+  animation: tool-approval-in 0.28s ease-out both;
+  box-shadow: 0 0 16px 0 color-mix(in srgb, var(--accent) 28%, transparent);
+}
+
+.tool-approval--write {
+  border-top-color: color-mix(in srgb, orange 60%, transparent);
+  box-shadow: 0 0 16px 0 color-mix(in srgb, orange 28%, transparent);
 }
 
 /* Badge, tool name, and Approve/Deny now share one row — previously the
@@ -665,11 +972,13 @@
 
 .tool-approval__approve,
 .tool-approval__deny {
-  padding: 6px 16px;
-  border-radius: 6px;
+  padding: 7px 18px;
+  border-radius: 8px;
   cursor: pointer;
   font: inherit;
   font-size: 13px;
+  font-weight: 600;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease, border-color 0.12s ease, color 0.12s ease;
 }
 
 .tool-approval__approve {
@@ -680,6 +989,8 @@
 
 .tool-approval__approve:hover {
   filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--accent) 45%, transparent);
 }
 
 .tool-approval__deny {
@@ -691,6 +1002,8 @@
 .tool-approval__deny:hover {
   border-color: var(--danger);
   color: var(--danger);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--danger) 25%, transparent);
 }
 
 .tool-approval__args-summary {
@@ -721,10 +1034,27 @@
 
 /* Execute-risk calls (shell commands) get a stronger, danger-tinted border
    on the whole prompt so the riskiest tool in the app visually stands out
-   from a routine read_file/list_directory approval. */
+   from a routine read_file/list_directory approval — and, unlike read/write
+   (entrance glow only, see .tool-approval above), a slow, gentle pulse.
+   Deliberately the only tier that pulses: visual urgency should scale with
+   actual risk, not be uniform, and a constantly-pulsing approval prompt for
+   a routine read_file call would just be distracting noise. */
+@keyframes tool-approval-pulse-danger {
+  0%,
+  100% {
+    box-shadow: 0 0 16px 0 color-mix(in srgb, var(--danger) 32%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 26px 3px color-mix(in srgb, var(--danger) 42%, transparent);
+  }
+}
+
 .tool-approval--execute {
   border-top-color: var(--danger);
   background: color-mix(in srgb, var(--danger) 10%, var(--accent-bg));
+  animation:
+    tool-approval-in 0.28s ease-out both,
+    tool-approval-pulse-danger 2.4s ease-in-out infinite;
 }
 
 .tool-approval__risk-badge {
@@ -741,16 +1071,19 @@
 .tool-approval__risk-badge--read {
   background: var(--accent-bg);
   color: var(--accent);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .tool-approval__risk-badge--write {
   background: color-mix(in srgb, orange 20%, transparent);
   color: color-mix(in srgb, orange 55%, var(--text-h));
+  box-shadow: 0 0 0 1px color-mix(in srgb, orange 40%, transparent);
 }
 
 .tool-approval__risk-badge--execute {
   background: color-mix(in srgb, var(--danger) 20%, transparent);
   color: var(--danger);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
 }
 
 /* Turn flow graph (ActivityTracker.tsx::TurnFlowGraph) — a single turn's
@@ -976,6 +1309,7 @@
 }
 
 .message-input {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -984,17 +1318,51 @@
   transition: background 0.15s ease;
 }
 
+/* HUD-style corner brackets around the input row — appear only while the
+   textarea has focus (:focus-within on the row), like a targeting reticle
+   powering on around the active control, rather than a permanent fixture
+   cluttering the bar you look at on every single turn. A subtle nod to the
+   "game menu" reference (Sword Art Online-style HUDs), not a literal skin. */
+.message-input__row {
+  position: relative;
+  display: flex;
+  gap: 8px;
+}
+
+.message-input__row::before,
+.message-input__row::after {
+  content: '';
+  position: absolute;
+  top: -6px;
+  width: 12px;
+  height: 10px;
+  border-top: 2px solid var(--accent);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.message-input__row::before {
+  left: -6px;
+  border-left: 2px solid var(--accent);
+}
+
+.message-input__row::after {
+  right: -6px;
+  border-right: 2px solid var(--accent);
+}
+
+.message-input__row:focus-within::before,
+.message-input__row:focus-within::after {
+  opacity: 0.8;
+}
+
 /* Tauri's drag-drop event is window-scoped, not tied to this element as a
    real HTML drop target — this highlight is purely a visual cue driven by
    the 'over'/'drop'/'leave' event payload types in MessageInput.tsx, not a
    native dragover/drop DOM listener. */
 .message-input--drag-over {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
-}
-
-.message-input__row {
-  display: flex;
-  gap: 8px;
 }
 
 .message-input__attachments {
@@ -1037,6 +1405,48 @@
   color: var(--danger);
 }
 
+.message-input__images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.message-input__image-chip {
+  position: relative;
+  display: inline-flex;
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.message-input__image-chip img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.message-input__image-remove {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: none;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.9rem;
+  line-height: 1;
+}
+
+.message-input__image-remove:hover {
+  background: var(--danger);
+  color: var(--text-h);
+}
+
 /* "Bubble" (fully round, pill radius) rather than the app's usual
    rounded-square button shape — a deliberately distinct affordance for
    "attach something" vs. every other rectangular action button here, and
@@ -1054,11 +1464,13 @@
   font-size: 1.3rem;
   line-height: 1;
   cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .message-input__insert-file:hover:not(:disabled) {
   border-color: var(--accent-border);
   background: color-mix(in srgb, var(--accent) 12%, var(--input-bg));
+  box-shadow: 0 0 12px 0 color-mix(in srgb, var(--accent) 40%, transparent);
 }
 
 .message-input__insert-file:disabled {
@@ -1075,6 +1487,13 @@
   background: var(--input-bg);
   color: var(--text-h);
   resize: none;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.message-input textarea:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 1px var(--accent-border), 0 0 14px 0 color-mix(in srgb, var(--accent) 35%, transparent);
 }
 
 .message-input__send,
@@ -1085,6 +1504,7 @@
   border: 1px solid var(--accent-border);
   cursor: pointer;
   font: inherit;
+  transition: filter 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
 /* Solid-filled, not the pale accent-bg outline every other secondary
@@ -1097,6 +1517,8 @@
 
 .message-input__send:hover:not(:disabled) {
   filter: brightness(1.08);
+  box-shadow: 0 0 16px 0 color-mix(in srgb, var(--accent) 55%, transparent);
+  transform: translateY(-1px);
 }
 
 .message-input__stop {
@@ -1263,8 +1685,18 @@
    inside the drag-region titlebar, so it must opt out of dragging or
    clicking a theme would move the window instead. */
 
+/* Every other titlebar control is a bare <button>, a direct flex item of
+   .titlebar (height:28px) — its own height:100% resolves against that
+   directly. ThemePicker wraps its button in this div (needed for the
+   popover's position:relative anchor), which broke that chain: with no
+   explicit height here, the button's height:100% had nothing real to
+   resolve against and collapsed to its content size instead of filling the
+   titlebar, visibly sitting higher than its siblings. */
 .theme-picker {
   position: relative;
+  height: 100%;
+  display: flex;
+  align-items: center;
 }
 
 .titlebar__theme-toggle {
@@ -1495,6 +1927,7 @@
   font: inherit;
   font-size: 13px;
   cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease, text-shadow 0.2s ease;
 }
 
 .settings-menu__tab:hover {
@@ -1504,6 +1937,7 @@
 .settings-menu__tab--active {
   color: var(--text-h);
   border-bottom-color: var(--accent);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .settings-menu__content {
@@ -1521,6 +1955,14 @@
      of the pane as dead space. min() keeps it from overflowing a narrow
      widget while giving it real room to breathe once there's room to. */
   max-width: min(720px, 100%);
+  /* Real gap this left uncentered: at 720px capped width in a much wider
+     expanded window, the extra space landed entirely on the right,
+     reading as unfinished/lopsided rather than intentional. Centering
+     turns it into balanced margins instead — a real fix for what's
+     currently possible without redesigning the field layout itself (e.g.
+     a genuine two-column grid for the compact/widget vs. expanded window,
+     which is a bigger, separate design question, not assumed here). */
+  margin: 0 auto;
 }
 
 .settings-menu__heading {
@@ -1671,7 +2113,7 @@
   inset: 0;
   border-radius: 999px;
   background: var(--border);
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, box-shadow 0.15s ease;
   pointer-events: none;
 }
 
@@ -1690,6 +2132,7 @@
 
 .settings-menu__toggle input:checked + .settings-menu__toggle-track {
   background: var(--accent);
+  box-shadow: 0 0 8px 0 color-mix(in srgb, var(--accent) 55%, transparent);
 }
 
 .settings-menu__toggle input:checked + .settings-menu__toggle-track::before {
@@ -1923,6 +2366,197 @@
 
 .titlebar__memory-graph-toggle:hover {
   background: var(--hover-bg);
+}
+
+/* v3: real DOM scroll + full MessageBubble rendering, Three.js kept to a
+   single fixed non-interactive backdrop layer — see ChatHistory3D.tsx's
+   top-of-file comment for why every earlier camera-navigation-based
+   version kept running into the same problem from a different angle. */
+
+.chat-history-3d {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.chat-history-3d__backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  /* Purely decorative — never intercepts scroll/click/drag, so it has no
+     way to reintroduce any camera/navigation behavior. */
+  pointer-events: none;
+}
+
+.chat-history-3d__backdrop canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.chat-history-3d__messages {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+@keyframes chat3d-card-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85) translateY(8px);
+    filter: brightness(1.5) saturate(1.3);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: brightness(1) saturate(1);
+  }
+}
+
+/* Two shadow layers: an outer glow (the "3D panel" bevel look asked for —
+   a real border plus an inset top highlight reads as raised glass, not
+   just a flat colored box) and the same outer glow at rest vs. pulsed.
+   Sizes are custom properties (--card-glow-rest/--card-glow-peak/
+   --card-glow-peak-spread), not fixed px, specifically so tool cards below
+   can tone theirs down independently. */
+@keyframes chat3d-card-pulse {
+  0%,
+  100% {
+    box-shadow:
+      0 0 var(--card-glow-rest, 14px) 0 var(--card-glow, var(--accent)),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.14);
+  }
+  50% {
+    box-shadow:
+      0 0 var(--card-glow-peak, 26px) var(--card-glow-peak-spread, 4px) var(--card-glow, var(--accent)),
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.22);
+  }
+}
+
+/* display: contents — real bug, live-found: this wrapper existing as an
+   actual box was the cause of both "boxes too large on the sides" and
+   "user boxes on the left." .message's own CSS (max-width: 75%,
+   align-self: flex-end for .message--user, etc.) was written assuming
+   .message itself is the direct flex child of a flex-direction: column
+   container — nesting it one level deeper inside this wrapper broke that:
+   a percentage max-width resolving against an auto/shrink-to-fit ancestor
+   is exactly the kind of thing browsers handle inconsistently, and in
+   practice it was stretching to the column's full width instead of
+   shrink-wrapping, which is what actually looked like "on the left" (the
+   left edge is what's consistently visible regardless of alignment when a
+   box spans the full width). display: contents removes this wrapper from
+   the box/layout tree entirely (it still exists in the DOM, so descendant
+   selectors below still work, and CSS custom properties like --card-glow
+   still inherit through it normally) — .message becomes the real, direct
+   flex item again, so its own already-correct width/alignment CSS is what
+   actually governs layout, exactly as it already does in flat chat. */
+.chat-history-3d__card {
+  display: contents;
+}
+
+.chat-history-3d__card .message {
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--card-glow, var(--accent)) 55%, transparent);
+  /* Two independent animations, chained: chat3d-card-in plays once on
+     mount (the natural "this message is new" trigger), chat3d-card-pulse
+     loops forever. The per-card negative delay set inline in
+     ChatHistory3D.tsx targets only the second value (pulse), desyncing the
+     idle glow across cards without any JS animation-frame loop. */
+  animation:
+    chat3d-card-in 0.45s cubic-bezier(0.16, 1, 0.3, 1) both,
+    chat3d-card-pulse 5s ease-in-out infinite;
+}
+
+/* Stronger text presence over the glow, scoped to this view only —
+   flat chat's bubbles stay as they were. */
+.chat-history-3d__card .message__content {
+  font-weight: 460;
+  text-shadow: 0 0 10px color-mix(in srgb, var(--card-glow, var(--accent)) 40%, transparent);
+}
+
+.chat-history-3d__card--user {
+  --card-glow: var(--user-bubble);
+}
+
+.chat-history-3d__card--assistant {
+  --card-glow: var(--assistant-bubble);
+}
+
+/* Deliberately calmer than the other roles — real feedback, live: tool
+   calls/results are frequent, low-priority-to-skim content (raw JSON args,
+   file dumps), and --warning's bright gold at the same glow intensity as
+   everything else made them dominate the view instead of receding, the
+   opposite of flat chat's own .message--tool { opacity: 0.85 } treatment,
+   mirrored here too. */
+.chat-history-3d__card--tool {
+  --card-glow: var(--warning);
+  --card-glow-rest: 5px;
+  --card-glow-peak: 9px;
+  --card-glow-peak-spread: 1px;
+}
+
+.chat-history-3d__card--tool .message {
+  opacity: 0.85;
+}
+
+.chat-history-3d__card--system {
+  --card-glow: var(--text-muted);
+}
+
+/* Themed scrollbar (WebKit/Chromium, which this app's webview is) — a thin
+   accent-colored thumb instead of the native OS scrollbar, which clashed
+   with the dark glass look, especially now that the widget window's fixed
+   420x620 size (see lib.rs) scrolls sooner with these cards' larger
+   padding/glow footprint than flat chat's tighter plain bubbles needed. */
+.chat-history-3d__messages::-webkit-scrollbar {
+  width: 8px;
+}
+
+.chat-history-3d__messages::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-history-3d__messages::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 999px;
+}
+
+/* Tighter density specifically for the widget/tray window (420px wide) —
+   doesn't change the window's fixed size, just gives these visually
+   heavier cards more usable room within it. */
+@media (max-width: 480px) {
+  .chat-history-3d__messages {
+    padding: 10px;
+    gap: 10px;
+  }
+}
+
+/* Same shape as .chat-window__jump-to-bottom, but opaque (--bg-alt) rather
+   than that button's translucent --accent-bg — this still floats over the
+   WebGL backdrop layer, same reason the memory graph's own detail panel
+   needed the opaque treatment. */
+.chat-history-3d__jump-to-bottom {
+  position: absolute;
+  z-index: 2;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--accent-border);
+  background: var(--bg-alt);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
 }
 
 .memory-graph-view {

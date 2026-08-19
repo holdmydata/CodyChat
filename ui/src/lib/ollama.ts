@@ -16,6 +16,8 @@ export interface WireMessage {
   tool_calls?: { function: { name: string; arguments: Record<string, unknown> } }[];
   /** Present on 'tool' role messages — links a result back to the call it answers. */
   tool_call_id?: string;
+  /** Base64 image data, no `data:` prefix — Ollama's vision-model input format. */
+  images?: string[];
 }
 
 export interface StreamChatArgs {
@@ -36,6 +38,20 @@ export interface BakedParams {
   topP?: number;
 }
 
+// Architecture fields needed to estimate KV-cache size for the RAM/VRAM
+// forecaster (resourceForecast.ts) — how much extra memory a given context
+// length actually costs, not just the model's own weight size. Any of
+// these can be null if a particular model's model_info doesn't expose them
+// (older/nonstandard exports), in which case the forecaster falls back to
+// a flatter estimate instead of a hard failure.
+export interface ModelArchInfo {
+  numLayers: number | null;
+  embeddingLength: number | null;
+  headCount: number | null;
+  /** Grouped-query attention uses fewer KV heads than query heads — falls back to headCount (== standard multi-head attention) when absent. */
+  headCountKV: number | null;
+}
+
 export interface ModelInfo {
   capabilities: string[];
   parameterSize: string;
@@ -45,6 +61,7 @@ export interface ModelInfo {
   system: string;
   /** Sampling params baked into the Modelfile (PARAMETER lines) — distinct from contextLength, which is the model's max, not a saved preference. */
   bakedParams: BakedParams;
+  arch: ModelArchInfo;
 }
 
 // status/likelyContextOverflow let callers (useChat.ts's retry logic)
@@ -96,6 +113,27 @@ function findContextLength(modelInfo: Record<string, unknown>): number | null {
   return null;
 }
 
+// Same family-prefix search as findContextLength, generalized to any
+// suffix — model_info's keys are all shaped "{family}.{field}" with no
+// fixed family name to look up directly.
+function findBySuffix(modelInfo: Record<string, unknown>, suffix: string): number | null {
+  for (const [key, value] of Object.entries(modelInfo)) {
+    if (key.endsWith(suffix) && typeof value === 'number') {
+      return value;
+    }
+  }
+  return null;
+}
+
+function findArchInfo(modelInfo: Record<string, unknown>): ModelArchInfo {
+  return {
+    numLayers: findBySuffix(modelInfo, '.block_count'),
+    embeddingLength: findBySuffix(modelInfo, '.embedding_length'),
+    headCount: findBySuffix(modelInfo, '.attention.head_count'),
+    headCountKV: findBySuffix(modelInfo, '.attention.head_count_kv'),
+  };
+}
+
 // /api/show returns baked PARAMETER lines as a single newline-delimited
 // string (e.g. "num_ctx  8192\ntemperature  1\ntop_k  20"), not structured
 // JSON — confirmed against a real model's response, not assumed from docs.
@@ -132,6 +170,7 @@ export async function showModel(baseUrl: string, model: string): Promise<ModelIn
     contextLength: findContextLength(data.model_info ?? {}),
     system: data.system ?? '',
     bakedParams: parseBakedParams(data.parameters),
+    arch: findArchInfo(data.model_info ?? {}),
   };
 }
 

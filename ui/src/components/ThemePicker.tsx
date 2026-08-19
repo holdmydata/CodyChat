@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { Palette } from 'lucide-react';
 import {
   BUILTIN_THEMES,
   loadCustomThemes,
@@ -83,7 +84,7 @@ interface ThemePickerMenuProps extends ThemePickerProps {
 
 // The picker's actual content (built-ins, imported packs, import controls) —
 // factored out so it can be rendered two ways: as a popover from the
-// titlebar 🎨 button (quick access, see ThemePicker below) and inline as a
+// titlebar palette button (quick access, see ThemePicker below) and inline as a
 // full section of the Settings menu (a proper home for it, not just a
 // dropdown). Both read/write the same localStorage-backed custom-theme list.
 export function ThemePickerMenu({ activeId, onSelect, embedded = false }: ThemePickerMenuProps) {
@@ -198,7 +199,7 @@ export function ThemePickerMenu({ activeId, onSelect, embedded = false }: ThemeP
 }
 
 // Titlebar quick-access popover — a thin wrapper around ThemePickerMenu that
-// adds the 🎨 toggle button and open/close (outside-click, Escape) behavior.
+// adds the palette toggle button and open/close (outside-click, Escape) behavior.
 export function ThemePicker({ activeId, onSelect }: ThemePickerProps) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -230,7 +231,7 @@ export function ThemePicker({ activeId, onSelect }: ThemePickerProps) {
         aria-expanded={open}
         title="Theme"
       >
-        🎨
+        <Palette size={16} />
       </button>
       {open && <ThemePickerMenu activeId={activeId} onSelect={onSelect} />}
     </div>

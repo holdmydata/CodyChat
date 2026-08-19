@@ -1,7 +1,7 @@
 import { useState, type ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
-import type { ActivityStep, Message } from '../types';
+import type { ActivityStep, Message, ToolCall } from '../types';
 import { TurnFlowGraph } from './ActivityTracker';
 
 // react-markdown renders straight to React elements rather than an HTML
@@ -56,6 +56,33 @@ function ThinkingBreakout({ thinking, stillThinking }: { thinking: string; still
   );
 }
 
+// The turn's *final* message recaps the whole tool-call chain via
+// TurnFlowGraph (collapsed by default — nothing selected until clicked),
+// but every intermediate "assistant requested a tool call" message stays
+// in the list permanently, separately from that recap. Previously this
+// always rendered the full raw JSON args inline with no way to collapse
+// it — exactly the "tool calls keep the details open" complaint. Collapsed
+// by default here too, same chevron-toggle convention as
+// ThinkingBreakout/ActivityLogBreakout, so a multi-step turn reads as a
+// clean icon-and-name bar until you actually want to inspect one.
+function ToolCallChip({ call }: { call: ToolCall }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="message__tool-call">
+      <button
+        type="button"
+        className="message__tool-call-toggle"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+      >
+        <span className={`message__thinking-chevron ${expanded ? 'message__thinking-chevron--open' : ''}`}>▸</span>
+        🔧 Called <code>{call.name}</code>
+      </button>
+      {expanded && <code className="message__tool-call-args">{JSON.stringify(call.arguments)}</code>}
+    </div>
+  );
+}
+
 function ActivityLogBreakout({ steps, thinking }: { steps: ActivityStep[]; thinking?: string }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -76,14 +103,37 @@ function ActivityLogBreakout({ steps, thinking }: { steps: ActivityStep[]; think
   );
 }
 
+// Real, screenshot-reported gap: this always rendered the full result as a
+// big always-open box, no toggle at all — the one place this session's
+// "collapsed by default, click to expand" convention (ToolCallChip,
+// ActivityLogBreakout, ThinkingBreakout) never actually got applied,
+// because a tool *result* is a separate message/role from the tool *call*
+// request ToolCallChip already covers. Collapsed to a one-line preview by
+// default, same chevron-toggle language as everywhere else.
+function ToolResultBubble({ content }: { content: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const firstLine = content.trim().split('\n')[0] ?? '';
+  const preview = firstLine.length > 90 ? `${firstLine.slice(0, 90)}…` : firstLine;
+  return (
+    <div className="message message--tool">
+      <button
+        type="button"
+        className="message__tool-result-toggle"
+        onClick={() => setExpanded((v) => !v)}
+        aria-expanded={expanded}
+      >
+        <span className={`message__thinking-chevron ${expanded ? 'message__thinking-chevron--open' : ''}`}>▸</span>
+        <span className="message__role">tool result</span>
+        {!expanded && preview && <span className="message__tool-result-preview">{preview}</span>}
+      </button>
+      {expanded && <pre className="message__tool-result">{content}</pre>}
+    </div>
+  );
+}
+
 export function MessageBubble({ message, isStreaming }: { message: Message; isStreaming?: boolean }) {
   if (message.role === 'tool') {
-    return (
-      <div className="message message--tool">
-        <div className="message__role">tool result</div>
-        <pre className="message__tool-result">{message.content}</pre>
-      </div>
-    );
+    return <ToolResultBubble content={message.content} />;
   }
 
   const hasToolCalls = Boolean(message.toolCalls?.length);
@@ -108,13 +158,14 @@ export function MessageBubble({ message, isStreaming }: { message: Message; isSt
       {hasActivitySteps ? (
         <ActivityLogBreakout steps={message.activitySteps!} thinking={message.thinking} />
       ) : null}
-      {hasToolCalls &&
-        message.toolCalls!.map((call) => (
-          <div key={call.id} className="message__tool-call">
-            🔧 Called <code>{call.name}</code>
-            <code className="message__tool-call-args">{JSON.stringify(call.arguments)}</code>
-          </div>
-        ))}
+      {hasToolCalls && message.toolCalls!.map((call) => <ToolCallChip key={call.id} call={call} />)}
+      {message.images && message.images.length > 0 && (
+        <div className="message__images">
+          {message.images.map((base64, i) => (
+            <img key={i} src={`data:image/png;base64,${base64}`} alt="Attached" className="message__image" />
+          ))}
+        </div>
+      )}
       {message.content ? (
         <div className="message__content">{renderContent(message.content)}</div>
       ) : stillThinking || hasToolCalls ? null : endedWithNoContent ? (

@@ -41,6 +41,17 @@ export function ModelPicker({ baseUrl, value, onChange, refreshKey }: ModelPicke
   }
 
   const currentMissing = models.length > 0 && value && !models.some((m) => m.name === value);
+  // A native <select> whose `value` prop doesn't match any <option> falls
+  // back to silently displaying whichever option is first in DOM order —
+  // it *looks* selected but isn't. That bit twice for real: a freshly
+  // created conversation defaults to model: '' (App.tsx's DEFAULT_MODEL,
+  // deliberately empty rather than guessing — see the no-auto-reassign
+  // comment below), so the picker showed a real-looking model name while
+  // the conversation's actual model stayed empty and the message input
+  // stayed silently disabled; same illusion showed a phantom "selection"
+  // in Settings when there was no active conversation at all. An explicit
+  // placeholder option makes the select's displayed value match reality.
+  const needsPlaceholder = models.length > 0 && !value;
 
   return (
     <select
@@ -50,6 +61,7 @@ export function ModelPicker({ baseUrl, value, onChange, refreshKey }: ModelPicke
       title={currentMissing ? `"${value}" wasn't found on this Ollama instance — pick a different model.` : undefined}
     >
       {models.length === 0 && <option value="">loading…</option>}
+      {needsPlaceholder && <option value="">Select a model…</option>}
       {currentMissing && <option value={value}>⚠ {value} (not found)</option>}
       {models.map((m) => (
         <option key={m.name} value={m.name}>

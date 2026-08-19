@@ -1,17 +1,34 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { open } from '@tauri-apps/plugin-dialog';
 
 interface MessageInputProps {
   disabled: boolean;
   isStreaming: boolean;
-  onSend: (content: string) => void;
+  onSend: (content: string, images?: string[]) => void;
   onStop: () => void;
+}
+
+interface PastedImage {
+  id: string;
+  /** `data:` URL for the thumbnail preview. */
+  dataUrl: string;
+  /** Raw base64 (no `data:` prefix) — what actually goes on the wire to Ollama. */
+  base64: string;
 }
 
 function basename(path: string): string {
   const parts = path.split(/[\\/]/);
   return parts[parts.length - 1] || path;
+}
+
+function readAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 // Folds attached paths into the actual outgoing message text — the model
@@ -24,9 +41,16 @@ function withAttachments(text: string, attachments: string[]): string {
   return text.trim() ? `${text}\n\n${pathLines}` : pathLines;
 }
 
+let pastedImageCounter = 0;
+function nextPastedImageId(): string {
+  pastedImageCounter += 1;
+  return `pasted-image-${pastedImageCounter}`;
+}
+
 export function MessageInput({ disabled, isStreaming, onSend, onStop }: MessageInputProps) {
   const [value, setValue] = useState('');
   const [attachments, setAttachments] = useState<string[]>([]);
+  const [images, setImages] = useState<PastedImage[]>([]);
   const [isDragOver, setIsDragOver] = useState(false);
 
   // Tauri's drag-drop event is window-scoped, not a per-element DOM drop
@@ -85,15 +109,44 @@ export function MessageInput({ disabled, isStreaming, onSend, onStop }: MessageI
     setAttachments((prev) => prev.filter((p) => p !== path));
   };
 
+  const removeImage = (id: string) => {
+    setImages((prev) => prev.filter((img) => img.id !== id));
+  };
+
+  // Clipboard paste is the primary way an image gets in here — screenshots
+  // and copied images from a browser/editor arrive as a File on
+  // clipboardData.items, not as text, so this only intercepts the paste
+  // (preventDefault) when an image is actually present; a normal text paste
+  // falls through untouched.
+  const handlePaste = async (e: ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles = Array.from(items)
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((f): f is File => f !== null);
+    if (imageFiles.length === 0) return;
+    e.preventDefault();
+    for (const file of imageFiles) {
+      const dataUrl = await readAsDataUrl(file);
+      const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+      setImages((prev) => [...prev, { id: nextPastedImageId(), dataUrl, base64 }]);
+    }
+  };
+
   const submit = () => {
     // The Send button already hides itself while streaming, but Enter in
     // the textarea bypassed that — letting a new message fire a second,
     // concurrent sendMessage() while the first was still suspended
     // awaiting tool approval, orphaning the pending prompt on screen.
-    if ((!value.trim() && attachments.length === 0) || isStreaming) return;
-    onSend(withAttachments(value, attachments));
+    if ((!value.trim() && attachments.length === 0 && images.length === 0) || isStreaming) return;
+    onSend(
+      withAttachments(value, attachments),
+      images.length > 0 ? images.map((img) => img.base64) : undefined
+    );
     setValue('');
     setAttachments([]);
+    setImages([]);
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -122,6 +175,23 @@ export function MessageInput({ disabled, isStreaming, onSend, onStop }: MessageI
           ))}
         </div>
       )}
+      {images.length > 0 && (
+        <div className="message-input__images">
+          {images.map((img) => (
+            <span key={img.id} className="message-input__image-chip">
+              <img src={img.dataUrl} alt="Pasted attachment" />
+              <button
+                type="button"
+                className="message-input__image-remove"
+                onClick={() => removeImage(img.id)}
+                aria-label="Remove image"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
       <div className="message-input__row">
         <button
           type="button"
@@ -137,7 +207,8 @@ export function MessageInput({ disabled, isStreaming, onSend, onStop }: MessageI
           value={value}
           onChange={(e) => setValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Message the model… (drag a file in, or click + to insert one)"
+          onPaste={handlePaste}
+          placeholder="Message the model… (drag a file in, click + to insert one, or paste an image)"
           disabled={disabled}
           rows={1}
         />

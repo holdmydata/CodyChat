@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { ActivityStep } from '../types';
 
 export const STATUS_ICON: Record<ActivityStep['status'], string> = {
@@ -59,19 +59,15 @@ export function TurnFlowGraph({ steps, thinking, variant = 'log' }: TurnFlowGrap
   const nodes = buildNodes(steps, thinking);
   const isLive = variant === 'live';
 
+  // Used to auto-select (force-expand) the newest node here, so the live
+  // band always showed full detail for whatever was currently running —
+  // real, reported bug: a tool call stayed in "detailed mode" for the rest
+  // of the turn right after being approved, instead of collapsing back to
+  // just the icon bar the way the persisted log view already does. Nothing
+  // selected by default in either variant now — click a node to inspect
+  // it, same convention everywhere else this session's polish pass touched
+  // (ToolCallChip, Thinking/ActivityLog breakouts).
   const [selectedId, setSelectedId] = useState<string | null>(null);
-
-  // Live view follows the newest node automatically, same spirit as the
-  // old live tracker showing every step auto-expanded — a manual
-  // selection elsewhere in the chain isn't preserved once a new node
-  // arrives, which matches "tailing" a run in progress rather than
-  // pausing on an old step.
-  useEffect(() => {
-    if (isLive && nodes.length > 0) {
-      setSelectedId(nodes[nodes.length - 1].id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLive, nodes.length]);
 
   if (nodes.length === 0) return null;
 

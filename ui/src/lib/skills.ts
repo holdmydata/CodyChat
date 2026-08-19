@@ -42,6 +42,12 @@ interface ReadFileResult {
   source_type: string;
 }
 
+interface WebFetchResult {
+  content: string;
+  source_type: string;
+  final_url: string;
+}
+
 export interface SkillContext {
   baseUrl: string;
   conversationId: string;
@@ -111,6 +117,17 @@ export async function executeSkill(call: ToolCall, ctx: SkillContext): Promise<s
       if (result.stdout) parts.push(`stdout:\n${result.stdout}`);
       if (result.stderr) parts.push(`stderr:\n${result.stderr}`);
       return parts.join('\n\n');
+    }
+    case 'web_fetch': {
+      // No remember flag here, unlike read_file/write_file — tried that
+      // first and it didn't hold up live: given the shortcut, the model
+      // remembered raw fetches verbatim instead of following the
+      // system-prompt hint to write_file a distilled memory_type:
+      // 'learned_reference' summary. Removing the affordance forces that
+      // path instead of relying on a soft prompt nudge (see skills.rs's
+      // web_fetch comment for the full incident).
+      const result = await invoke<WebFetchResult>('web_fetch', call.arguments);
+      return result.content;
     }
     case 'search_memory': {
       const query = String(call.arguments.query ?? '');

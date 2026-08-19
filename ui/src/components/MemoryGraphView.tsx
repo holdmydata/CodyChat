@@ -12,6 +12,7 @@ import {
   type MemoryGraphNode,
   type MemoryItemDetail,
 } from '../lib/memoryGraph';
+import { readCssColor, useThemeVersion } from '../lib/threeTheme';
 
 // d3-force-3d adds z/vz at runtime when forceSimulation is given
 // numDimensions=3 — not part of @types/d3-force's SimulationNodeDatum (see
@@ -57,15 +58,6 @@ function buildCausalEdges(nodes: SimNode[]): SimLink[] {
 
 const DEFAULT_NEIGHBORS = 3;
 
-function readCssColor(varName: string, fallback: string): THREE.Color {
-  const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
-  try {
-    return new THREE.Color(value || fallback);
-  } catch {
-    return new THREE.Color(fallback);
-  }
-}
-
 // source_type -> which theme CSS var colors it, read live so the graph
 // re-skins with the active pack same as every other themed surface in this
 // app. Falls back to --accent for any type not explicitly listed, so a
@@ -88,25 +80,6 @@ function colorForSourceType(sourceType: string): THREE.Color {
     default:
       return readCssColor('--accent', '#4a90d9');
   }
-}
-
-// Real bug hit live: colors read via readCssColor were only ever computed
-// once (useMemo with no real dependency on theme state), so switching
-// themes (applyThemePack sets a data-theme attribute + injects a fresh
-// <style> tag — see lib/themes.ts) never updated anything already rendered
-// in the WebGL scene, unlike every other themed surface in this app which
-// picks up CSS var changes automatically through the normal cascade. A
-// MutationObserver on <html>'s attributes is the actual mechanism themes
-// change through, so it's what this bumps a version off of — anything
-// memoizing a readCssColor() call should depend on this number.
-function useThemeVersion(): number {
-  const [version, setVersion] = useState(0);
-  useEffect(() => {
-    const observer = new MutationObserver(() => setVersion((v) => v + 1));
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    return () => observer.disconnect();
-  }, []);
-  return version;
 }
 
 function GraphNode({

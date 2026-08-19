@@ -21,6 +21,8 @@ export interface Message {
   role: Role;
   content: string;
   thinking?: string;
+  /** Base64-encoded image data (no `data:` prefix — matches Ollama's wire format directly), pasted or dropped into MessageInput. Only meaningful on 'user' messages. */
+  images?: string[];
   /** Present on assistant messages that requested one or more tool calls. */
   toolCalls?: ToolCall[];
   /** Present on 'tool' role messages — which call this result responds to. */

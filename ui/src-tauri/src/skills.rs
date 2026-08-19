@@ -9,6 +9,7 @@
 
 use std::fs;
 use std::io::Read;
+use std::net::{IpAddr, Ipv6Addr, SocketAddr, ToSocketAddrs};
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -390,6 +391,166 @@ pub fn execute_command(command: String, working_dir: Option<String>) -> Result<C
     })
 }
 
+// web_fetch: lets the model pull real docs/reference pages from the public
+// web, the same idea as Claude Code's own WebFetch. Deliberately a native
+// Rust command rather than an MCP server (e.g. mcp-server-fetch) — that
+// would need Python + uvx present on every machine, which conflicts with
+// this project's closed-circuit/no-install posture (see docs/MEMORY.md's
+// loopx/WSL2 discussion). Ships inside this binary with no extra install
+// story, same as every other skill in this file.
+//
+// SSRF guard is the actual safety boundary here (not the approval click —
+// this is tier 'read' in toolConfig.ts, auto-approvable). Blocks the model
+// from being tricked into hitting loopback/private/link-local addresses
+// (including the 169.254.169.254 cloud-metadata IP, a real SSRF target).
+// Two things a naive guard would miss, both handled deliberately:
+//   1. DNS rebinding — resolving the host once to check it, then letting
+//      the HTTP client re-resolve (possibly differently) when it actually
+//      connects. Fixed by pinning the connection to the exact validated
+//      IP via ClientBuilder::resolve, so check and connect use the same
+//      address.
+//   2. Redirects to an internal address — reqwest's default redirect
+//      policy would follow a 3xx without re-checking the new host. Fixed
+//      by disabling automatic redirects and re-running the full
+//      parse/resolve/guard/pin sequence on every hop, capped at
+//      WEB_FETCH_MAX_REDIRECTS.
+// Known, stated limitation: this guards against *this app* being tricked
+// into reaching an internal address — it is not anti-bot/robots.txt
+// handling, which is out of scope (fetching docs pages, not scraping).
+//
+// Deliberately no `remember` flag here (unlike read_file/write_file) —
+// tried that first and it didn't hold up live: given the option, the
+// model took the shortcut of remembering the raw fetch verbatim instead
+// of following the system-prompt hint to read it and write_file a
+// distilled memory_type: 'learned_reference' summary (a 132KB raw page
+// landed in memory as-is under source_type 'web_page'). A soft prompt
+// nudge wasn't reliable enough to compete with an easier tool affordance,
+// especially on a smaller model — removing the affordance entirely closes
+// that gap instead of trying to out-prompt it.
+
+const WEB_FETCH_MAX_RAW_BYTES: u64 = 5_000_000;
+const WEB_FETCH_TIMEOUT: Duration = Duration::from_secs(20);
+const WEB_FETCH_MAX_REDIRECTS: u8 = 5;
+const WEB_FETCH_USER_AGENT: &str = "CodyChat/0.1 (local desktop agent; +https://github.com/)";
+
+fn is_blocked_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            v4.is_loopback() || v4.is_private() || v4.is_link_local() || v4.is_unspecified() || v4.is_broadcast()
+        }
+        IpAddr::V6(v6) => v6.is_loopback() || v6.is_unspecified() || is_unique_local_v6(v6) || is_unicast_link_local_v6(v6),
+    }
+}
+
+// std's Ipv6Addr::is_unique_local/is_unicast_link_local weren't stable on
+// this crate's MSVC toolchain at the time this was written — checked via
+// the well-known fixed bit patterns instead so this doesn't depend on it:
+// fc00::/7 (unique local) and fe80::/10 (link local).
+fn is_unique_local_v6(v6: Ipv6Addr) -> bool {
+    (v6.segments()[0] & 0xfe00) == 0xfc00
+}
+
+fn is_unicast_link_local_v6(v6: Ipv6Addr) -> bool {
+    (v6.segments()[0] & 0xffc0) == 0xfe80
+}
+
+fn resolve_guarded(host: &str, port: u16) -> Result<SocketAddr, String> {
+    let addrs = (host, port)
+        .to_socket_addrs()
+        .map_err(|e| format!("could not resolve {host}: {e}"))?;
+    for addr in addrs {
+        if !is_blocked_ip(addr.ip()) {
+            return Ok(addr);
+        }
+    }
+    Err(format!(
+        "refusing to fetch {host}: resolves only to a private/internal/loopback address"
+    ))
+}
+
+fn read_capped(resp: reqwest::blocking::Response, max_bytes: u64) -> Result<Vec<u8>, String> {
+    let mut buf = Vec::new();
+    resp.take(max_bytes).read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    Ok(buf)
+}
+
+#[derive(Serialize, Debug)]
+pub struct WebFetchResult {
+    content: String,
+    source_type: String,
+    final_url: String,
+}
+
+#[tauri::command]
+pub fn web_fetch(url: String) -> Result<WebFetchResult, String> {
+    let mut current = reqwest::Url::parse(&url).map_err(|e| format!("invalid URL: {e}"))?;
+
+    for _ in 0..=WEB_FETCH_MAX_REDIRECTS {
+        let scheme = current.scheme();
+        if scheme != "http" && scheme != "https" {
+            return Err(format!("unsupported URL scheme: {scheme}"));
+        }
+        let host = current.host_str().ok_or("URL has no host")?.to_string();
+        let port = current
+            .port_or_known_default()
+            .ok_or("URL has no resolvable port")?;
+        let addr = resolve_guarded(&host, port)?;
+
+        let client = reqwest::blocking::Client::builder()
+            .timeout(WEB_FETCH_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::none())
+            .resolve(&host, addr)
+            .user_agent(WEB_FETCH_USER_AGENT)
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let resp = client.get(current.clone()).send().map_err(|e| e.to_string())?;
+        let status = resp.status();
+
+        if status.is_redirection() {
+            let location = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| format!("redirect ({status}) had no Location header"))?
+                .to_string();
+            current = current
+                .join(&location)
+                .map_err(|e| format!("invalid redirect target: {e}"))?;
+            continue;
+        }
+
+        if !status.is_success() {
+            return Err(format!("request failed: HTTP {status}"));
+        }
+
+        let content_type = resp
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string();
+
+        let final_url = current.to_string();
+        let bytes = read_capped(resp, WEB_FETCH_MAX_RAW_BYTES)?;
+
+        let text = if content_type.contains("html") {
+            html2text::from_read(bytes.as_slice(), 120).map_err(|e| format!("failed to parse HTML: {e}"))?
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        let content: String = text.chars().take(MAX_READ_BYTES).collect();
+
+        return Ok(WebFetchResult {
+            content,
+            source_type: "web_page".to_string(),
+            final_url,
+        });
+    }
+
+    Err(format!("too many redirects (max {WEB_FETCH_MAX_REDIRECTS})"))
+}
+
 /// Single source of truth for the tool JSON schemas sent to Ollama's
 /// `tools` field — the frontend fetches this via invoke() rather than
 /// hardcoding a duplicate copy in TypeScript.
@@ -495,6 +656,20 @@ pub fn get_tool_definitions() -> serde_json::Value {
         {
             "type": "function",
             "function": {
+                "name": "web_fetch",
+                "description": "Fetch a URL from the public web and return its readable text content (HTML is converted to plain text). Use this to read documentation, reference pages, or other public web content. Only http/https URLs are supported; requests to private, internal, or loopback addresses are refused. This does not save anything to memory by itself — a fetched page is often large and unfiltered, so if you're reading it to learn something for later (not just to answer the current question), read it, then write_file a concise distilled summary with remember: true and memory_type: 'learned_reference'.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "url": {"type": "string", "description": "The full URL to fetch, including scheme (e.g. https://...)"}
+                    },
+                    "required": ["url"]
+                }
+            }
+        },
+        {
+            "type": "function",
+            "function": {
                 "name": "search_memory",
                 "description": "Search past conversations and remembered documents for relevant context using semantic similarity. Use this when the user references something discussed before, asks you to recall prior context or a saved document, or when earlier history would help answer the current question. Returns the most relevant matches, most similar first.",
                 "parameters": {
@@ -514,6 +689,7 @@ pub fn get_tool_definitions() -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::net::Ipv4Addr;
 
     fn temp_file(name: &str, contents: &str) -> std::path::PathBuf {
         let path = std::env::temp_dir().join(format!("edit_file_test_{}_{name}", std::process::id()));
@@ -575,5 +751,63 @@ mod tests {
         fs::remove_file(&path).ok();
         assert!(result.is_ok());
         assert_eq!(contents, "bar\nbar\n");
+    }
+
+    fn v4(s: &str) -> IpAddr {
+        IpAddr::V4(s.parse::<Ipv4Addr>().unwrap())
+    }
+
+    fn v6(s: &str) -> IpAddr {
+        IpAddr::V6(s.parse::<Ipv6Addr>().unwrap())
+    }
+
+    #[test]
+    fn is_blocked_ip_blocks_loopback_and_private_v4_ranges() {
+        assert!(is_blocked_ip(v4("127.0.0.1")));
+        assert!(is_blocked_ip(v4("10.0.0.5")));
+        assert!(is_blocked_ip(v4("172.16.0.1")));
+        assert!(is_blocked_ip(v4("192.168.1.1")));
+        assert!(is_blocked_ip(v4("0.0.0.0")));
+    }
+
+    #[test]
+    fn is_blocked_ip_blocks_link_local_v4_including_cloud_metadata() {
+        assert!(is_blocked_ip(v4("169.254.169.254")));
+        assert!(is_blocked_ip(v4("169.254.1.1")));
+    }
+
+    #[test]
+    fn is_blocked_ip_allows_public_v4() {
+        assert!(!is_blocked_ip(v4("8.8.8.8")));
+        assert!(!is_blocked_ip(v4("93.184.216.34")));
+    }
+
+    #[test]
+    fn is_blocked_ip_blocks_loopback_unique_local_and_link_local_v6() {
+        assert!(is_blocked_ip(v6("::1")));
+        assert!(is_blocked_ip(v6("fc00::1")));
+        assert!(is_blocked_ip(v6("fd12:3456:789a::1")));
+        assert!(is_blocked_ip(v6("fe80::1")));
+    }
+
+    #[test]
+    fn is_blocked_ip_allows_public_v6() {
+        assert!(!is_blocked_ip(v6("2001:4860:4860::8888")));
+    }
+
+    #[test]
+    fn web_fetch_rejects_non_http_scheme() {
+        let result = web_fetch("ftp://example.com/file".to_string());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn web_fetch_rejects_localhost() {
+        // A real network attempt would still be refused before connecting
+        // (resolve_guarded runs before the request is sent), so this is
+        // safe to run without network access / mocking.
+        let result = web_fetch("http://127.0.0.1:11434/".to_string());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("private/internal/loopback"));
     }
 }

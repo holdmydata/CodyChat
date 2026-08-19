@@ -98,12 +98,15 @@ fn force_dwm_frame_recalc(window: &WebviewWindow) {
 const CORNER_MARGIN: i32 = 24;
 const SLIDE_STEPS: u64 = 16;
 const SLIDE_DURATION_MS: u64 = 220;
-// The compact widget — close to the pre-"half-screen-default" original
-// scaffold size, small enough to actually read as a tray popup rather
-// than a full window. Full mode still uses half the monitor's work area,
-// computed in full_size() below.
-const WIDGET_WIDTH: u32 = 420;
-const WIDGET_HEIGHT: u32 = 620;
+// The compact widget — small enough to still read as a tray popup rather
+// than a full window, but bumped up from the original 420x620 (a real
+// live-found constraint, not a guess: spatial chat mode's glow/border-
+// styled message cards have real padding/shadow footprint that flat
+// chat's tighter plain bubbles didn't, so the original size scrolled (and
+// clipped) sooner than intended once that mode existed). Full mode still
+// uses half the monitor's work area, computed in full_size() below.
+const WIDGET_WIDTH: u32 = 460;
+const WIDGET_HEIGHT: u32 = 720;
 
 // Tauri has no native window-position animation API, so this steps
 // set_position() on a background thread with an eased interpolation. Runs
@@ -443,6 +446,7 @@ pub fn run() {
             commands::get_loopx_digest,
             commands::get_environment_info,
             commands::read_theme_pack,
+            commands::get_system_resources,
             loopx::loopx_complete_todo,
             loopx::loopx_refresh_state,
             loopx::loopx_spend_slot,
@@ -452,6 +456,7 @@ pub fn run() {
             skills::list_directory,
             skills::search_files,
             skills::execute_command,
+            skills::web_fetch,
             skills::get_tool_definitions,
             mcp::mcp_connect,
             mcp::mcp_disconnect,

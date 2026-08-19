@@ -1,3 +1,45 @@
+/* Bundled, not fetched from Google Fonts at runtime — vendored the same
+   way vec0.dll is (see src-tauri), keeping this app fully offline-capable.
+   These are the actual fonts --sans below has always preferred (and what
+   several theme packs' own `font` field requests, see lib/themes.ts) —
+   until now they only rendered if a user happened to have them installed
+   locally, which essentially nobody does, so the app was silently falling
+   back to system-ui the whole time. All three confirmed OFL 1.1-licensed
+   (github.com/google/fonts' ofl/ directory, license text copied alongside
+   each file in public/fonts/) before vendoring, which permits exactly
+   this. M PLUS Rounded 1c (also referenced by --sans/some packs) is
+   deliberately NOT bundled — its only available file is a single static
+   weight at 3.4MB (full CJK glyph coverage, since the family is a
+   Japanese font also used for its Latin/rounded look), a real size
+   tradeoff not worth it for a UI chrome font; it stays install-dependent
+   like before. Variable fonts, one file covers the whole weight range —
+   font-weight given as a wide range rather than each family's exact axis
+   limits (not worth pinning precisely; browsers clamp to the nearest
+   supported weight regardless). */
+@font-face {
+  font-family: 'Quicksand';
+  src: url('/fonts/Quicksand.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Fredoka';
+  src: url('/fonts/Fredoka.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Nunito Sans';
+  src: url('/fonts/NunitoSans.ttf') format('truetype');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   /* Mirrors the 'light' pack in lib/themes.ts exactly — Auto (the default,
      no pack selected) and the explicit Light pack should look identical

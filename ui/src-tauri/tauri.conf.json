@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "CodyShell",
+  "productName": "CodyChat",
   "version": "0.1.0",
   "identifier": "dev.meansquares.shell",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "CodyShell",
+        "title": "CodyChat",
         "width": 460,
         "height": 640,
         "minWidth": 300,

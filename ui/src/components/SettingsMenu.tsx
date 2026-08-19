@@ -8,6 +8,7 @@ import type { ToolDefinition } from '../lib/skills';
 import type { McpServerConfig } from '../lib/mcp';
 import type { McpServerStatus } from '../hooks/useMcpServers';
 import type { ChatParams } from '../types';
+import type { PresentationMode } from '../lib/presentation';
 
 interface SettingsMenuProps {
   baseUrl: string;
@@ -16,6 +17,9 @@ interface SettingsMenuProps {
   tauriVersion?: string;
   themeId: string;
   onThemeSelect: (id: string) => void;
+  /** Flat vs. spatial (3D) chat history rendering — moved here from a titlebar toggle (2026-08-19) since it's a display preference, same category as theme/font, not something reached for every session. */
+  presentationMode: PresentationMode;
+  onPresentationModeSelect: (mode: PresentationMode) => void;
   tools: ToolDefinition[];
   disabledTools: Set<string>;
   onToggleTool: (name: string) => void;
@@ -30,6 +34,9 @@ interface SettingsMenuProps {
   /** The active conversation's model/system-prompt/params — moved here from a per-conversation toggle in the chat header so persona/modelfile editing has one clear home. */
   activeModel: string;
   onModelChange: (model: string) => void;
+  /** False right after a fresh launch with zero conversations (or all of them deleted) — SettingsPanel's fields are conversation-scoped and would otherwise silently show DEFAULT_PARAMS/an empty model with no working onChange, since there's no conversation for edits to write into. */
+  hasActiveConversation: boolean;
+  onStartNewChat: () => void;
   modelListRefreshKey?: number;
   systemPrompt: string;
   onSystemPromptChange: (prompt: string) => void;
@@ -42,6 +49,29 @@ interface SettingsMenuProps {
   fontOverride: string;
   onFontOverrideChange: (font: string) => void;
 }
+
+// Curated, not free-typed — real bug this replaces: the free-text input
+// wouldn't accept spaces while typing (root cause never pinned down, not
+// FONT_RE, which does allow them — a webview/IME quirk), which broke
+// typing any multi-word font name at all. User explicitly didn't want
+// free-typing as the long-term UX anyway ("don't really want users to
+// type"). Two tiers below: Windows-shipped system fonts (always render
+// regardless of what's bundled) and the three Google Fonts actually
+// vendored with the app (index.css's @font-face rules + public/fonts/,
+// confirmed OFL-licensed before bundling) — both are guaranteed to
+// actually render on selection, unlike a typed arbitrary name.
+const FONT_PRESETS: { label: string; value: string }[] = [
+  { label: 'Theme default', value: '' },
+  { label: 'Segoe UI (Windows default)', value: "'Segoe UI', system-ui, sans-serif" },
+  { label: 'Georgia (serif)', value: "Georgia, 'Times New Roman', serif" },
+  { label: 'Verdana', value: 'Verdana, sans-serif' },
+  { label: 'Trebuchet MS', value: "'Trebuchet MS', sans-serif" },
+  { label: 'Comic Sans MS (rounded/fun)', value: "'Comic Sans MS', 'Comic Sans', cursive" },
+  { label: 'Consolas (monospace)', value: "Consolas, 'Courier New', monospace" },
+  { label: 'Quicksand (bundled, rounded)', value: "'Quicksand', system-ui, sans-serif" },
+  { label: 'Fredoka (bundled, rounded)', value: "'Fredoka', system-ui, sans-serif" },
+  { label: 'Nunito Sans (bundled)', value: "'Nunito Sans', system-ui, sans-serif" },
+];
 
 type Tab = 'theme' | 'general' | 'tools';
 
@@ -67,6 +97,8 @@ export function SettingsMenu({
   tauriVersion,
   themeId,
   onThemeSelect,
+  presentationMode,
+  onPresentationModeSelect,
   tools,
   disabledTools,
   onToggleTool,
@@ -80,6 +112,8 @@ export function SettingsMenu({
   onDisconnectMcpServer,
   activeModel,
   onModelChange,
+  hasActiveConversation,
+  onStartNewChat,
   modelListRefreshKey,
   systemPrompt,
   onSystemPromptChange,
@@ -116,22 +150,52 @@ export function SettingsMenu({
             <h3 className="settings-menu__heading">Theme</h3>
             <ThemePickerMenu activeId={themeId} onSelect={onThemeSelect} embedded />
 
+            <h4 className="settings-menu__subheading">Chat view</h4>
+            <div className="settings-menu__tool-row">
+              <div className="settings-menu__tool-info">
+                <div className="settings-menu__tool-name">
+                  <span>Spatial (3D) chat view</span>
+                </div>
+                <p className="settings-menu__tool-desc">
+                  Renders conversation history with WebGL glow/animation polish instead of plain flat scrollback.
+                  Flat chat stays available as a fallback, not going away — just no longer the default focus.
+                </p>
+              </div>
+              <label className="settings-menu__toggle">
+                <input
+                  type="checkbox"
+                  checked={presentationMode === 'spatial'}
+                  onChange={() => onPresentationModeSelect(presentationMode === 'spatial' ? 'flat' : 'spatial')}
+                  aria-label={presentationMode === 'spatial' ? 'Switch to flat chat view' : 'Switch to spatial chat view'}
+                />
+                <span className="settings-menu__toggle-track" aria-hidden="true" />
+              </label>
+            </div>
+
             <h4 className="settings-menu__subheading">Font</h4>
             <p className="settings-menu__hint">
-              Theme packs can request a font (Google Fonts names like "Quicksand" or "M PLUS Rounded 1c"), but
-              nothing is bundled with the app — a requested font only renders if it's actually installed on this
-              machine, otherwise it silently falls back. Type a font-family value below to override whatever the
-              active pack asks for; the preview uses it directly so you can see immediately whether it's really
-              available here.
+              Theme packs can request a font (Google Fonts names like "Quicksand" or "M PLUS Rounded 1c") — three of
+              the most-requested ones (Quicksand, Fredoka, Nunito Sans) are now bundled with the app and always
+              render; anything else only renders if it happens to be installed on this machine, otherwise it
+              silently falls back. Pick a font below to override whatever the active pack asks for — every option
+              here (Windows-shipped fonts plus the three bundled ones) is guaranteed to actually render.
             </p>
             <label className="settings-panel__field">
-              <span>Font override</span>
-              <input
-                type="text"
-                value={fontOverride}
-                onChange={(e) => onFontOverrideChange(e.target.value)}
-                placeholder="'Quicksand', system-ui, sans-serif"
-              />
+              <span>Select font</span>
+              <select value={fontOverride} onChange={(e) => onFontOverrideChange(e.target.value)}>
+                {FONT_PRESETS.map((f) => (
+                  <option key={f.label} value={f.value}>
+                    {f.label}
+                  </option>
+                ))}
+                {/* Covers a value from before this became a dropdown, or a theme pack's own `font` field — a
+                    <select> whose value matches no <option> silently falls back to showing the first option
+                    instead, the same phantom-selection illusion already root-caused once on the model picker
+                    this session. This makes what's actually active honest instead of repeating that bug. */}
+                {fontOverride && !FONT_PRESETS.some((f) => f.value === fontOverride) && (
+                  <option value={fontOverride}>Custom: {fontOverride}</option>
+                )}
+              </select>
             </label>
             <p
               className="settings-menu__font-preview"
@@ -139,12 +203,6 @@ export function SettingsMenu({
             >
               The quick brown fox jumps over the lazy duck — Aa Bb Cc 123
             </p>
-            {fontOverride && (
-              <button type="button" className="settings-menu__font-reset" onClick={() => onFontOverrideChange('')}>
-                Reset to theme default
-              </button>
-            )}
-
             <div className="settings-menu__placeholder">
               <strong>Pack builder</strong> — a form to design your own theme pack (color pickers, name/author
               fields, export to file) is planned but not built yet. For now, import a pack via pasted JSON or a
@@ -167,19 +225,28 @@ export function SettingsMenu({
             </label>
 
             <h4 className="settings-menu__subheading">Active conversation</h4>
-            <SettingsPanel
-              baseUrl={baseUrl}
-              model={activeModel}
-              onModelChange={onModelChange}
-              modelListRefreshKey={modelListRefreshKey}
-              systemPrompt={systemPrompt}
-              onSystemPromptChange={onSystemPromptChange}
-              params={params}
-              onParamsChange={onParamsChange}
-              onModelCreated={onModelCreated}
-              memoryDisabled={memoryDisabled}
-              onMemoryDisabledChange={onMemoryDisabledChange}
-            />
+            {hasActiveConversation ? (
+              <SettingsPanel
+                baseUrl={baseUrl}
+                model={activeModel}
+                onModelChange={onModelChange}
+                modelListRefreshKey={modelListRefreshKey}
+                systemPrompt={systemPrompt}
+                onSystemPromptChange={onSystemPromptChange}
+                params={params}
+                onParamsChange={onParamsChange}
+                onModelCreated={onModelCreated}
+                memoryDisabled={memoryDisabled}
+                onMemoryDisabledChange={onMemoryDisabledChange}
+              />
+            ) : (
+              <div className="app__empty app__empty--inline">
+                <p>No conversation selected — these settings (model, prompt, sampling) belong to a conversation.</p>
+                <button type="button" onClick={onStartNewChat}>
+                  Start a new chat
+                </button>
+              </div>
+            )}
 
             {appVersion && (
               <p className="settings-menu__about">

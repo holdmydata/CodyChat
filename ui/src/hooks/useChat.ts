@@ -81,6 +81,19 @@ const THINKING_EFFICIENCY_HINT =
   "approach only — do not draft the full content there. Generate the actual content once, directly as the tool call's " +
   'argument, not twice.';
 
+// Targets a real gap in how remember/memory_type actually get used: nothing
+// prompted the model to apply this labeling discipline on its own — it only
+// happened once, live, because the user's own prompt spelled out "learn
+// once, build on learnings" explicitly (docs/Loopx-Reference.md). This makes
+// that the default behavior for research-style reads/fetches instead of
+// something that has to be asked for every time.
+const MEMORY_LABELING_HINT =
+  "When you read_file or web_fetch something specifically to learn from it for later use (not just to answer the current " +
+  "question), don't rely on that tool's own remember flag for it — it stores the raw source verbatim, which makes later " +
+  'search_memory results long and unfocused, especially for a large page. Instead, after reading it, write_file a concise ' +
+  "distilled summary of what's actually useful, with remember: true and memory_type: 'learned_reference'. Save the raw " +
+  'source as-is only when it, itself, is short and worth keeping verbatim.';
+
 const RETRY_TRIM_MESSAGE = '*(Note: earlier tool results were trimmed to fit the context window.)*\n\n';
 const OVERFLOW_AFTER_RETRY_MESSAGE =
   "(The conversation is too large for this model's context window, even after trimming. Try raising context length in Settings, or start a new conversation.)";
@@ -97,7 +110,9 @@ interface UseChatArgs {
   autoApproveReadOnly?: boolean;
 }
 
-function toWireMessages(messages: Pick<Message, 'role' | 'content' | 'toolCalls' | 'toolCallId'>[]): WireMessage[] {
+function toWireMessages(
+  messages: Pick<Message, 'role' | 'content' | 'toolCalls' | 'toolCallId' | 'images'>[]
+): WireMessage[] {
   return messages.map((m) => ({
     role: m.role,
     content: m.content,
@@ -105,6 +120,7 @@ function toWireMessages(messages: Pick<Message, 'role' | 'content' | 'toolCalls'
       ? { tool_calls: m.toolCalls.map((tc) => ({ function: { name: tc.name, arguments: tc.arguments } })) }
       : {}),
     ...(m.toolCallId ? { tool_call_id: m.toolCallId } : {}),
+    ...(m.images?.length ? { images: m.images } : {}),
   }));
 }
 
@@ -290,6 +306,7 @@ export function useChat({
       const systemParts = [
         AGENT_BEHAVIOR_HINT,
         THINKING_EFFICIENCY_HINT,
+        MEMORY_LABELING_HINT,
         envContextRef.current,
         modelSystem,
         conversation.systemPrompt,
@@ -519,17 +536,18 @@ export function useChat({
   );
 
   const sendMessage = useCallback(
-    async (content: string) => {
+    async (content: string, images?: string[]) => {
       // Defense in depth against a second overlapping turn — the primary
       // guard lives in MessageInput (Enter used to bypass the hidden Send
       // button while streaming), but nothing should be able to start a new
       // turn while one is already in flight regardless of entry point.
-      if (!conversation || !content.trim() || isStreaming) return;
+      if (!conversation || (!content.trim() && !images?.length) || isStreaming) return;
 
       const userMessage: Message = {
         id: makeId(),
         role: 'user',
         content,
+        ...(images?.length ? { images } : {}),
         createdAt: Date.now(),
       };
       const messages = [...conversation.messages, userMessage];

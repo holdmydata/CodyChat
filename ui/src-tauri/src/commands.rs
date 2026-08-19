@@ -206,6 +206,81 @@ pub fn get_loopx_digest() -> Vec<GoalDigest> {
         .collect()
 }
 
+// RAM/VRAM forecaster (SettingsPanel.tsx): lets the model picker warn
+// before you pick a model too big for this machine, instead of finding out
+// after a slow/failed load. RAM comes straight from the OS
+// (GlobalMemoryStatusEx — always available on Windows, no subprocess).
+// VRAM has no equivalent official Win32 API for *dedicated GPU* memory
+// (Win32_VideoController.AdapterRAM via WMI is a known-broken 32-bit field
+// that misreports for any card >4GB on modern Windows), so this shells out
+// to `nvidia-smi` instead, which reports real numbers directly from the
+// driver. Only covers NVIDIA — AMD/Intel GPUs report `gpu_name: None` and
+// the frontend explains the gap rather than pretending to know.
+#[derive(Serialize)]
+pub struct SystemResources {
+    total_ram_bytes: u64,
+    available_ram_bytes: u64,
+    gpu_name: Option<String>,
+    total_vram_bytes: Option<u64>,
+    available_vram_bytes: Option<u64>,
+}
+
+#[cfg(windows)]
+fn ram_stats() -> Result<(u64, u64), String> {
+    use windows::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
+    let mut status = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        ..Default::default()
+    };
+    unsafe { GlobalMemoryStatusEx(&mut status) }.map_err(|e| e.to_string())?;
+    Ok((status.ullTotalPhys, status.ullAvailPhys))
+}
+
+#[cfg(not(windows))]
+fn ram_stats() -> Result<(u64, u64), String> {
+    Err("RAM detection is only implemented on Windows".to_string())
+}
+
+// nvidia-smi's CSV output for a single GPU, e.g. "NVIDIA GeForce RTX 4070,
+// 12282, 9840" (name, total MiB, free MiB) — takes the first line/GPU only,
+// same simplification as this app's other single-adapter assumptions.
+fn nvidia_vram() -> Option<(String, u64, u64)> {
+    let output = Command::new("nvidia-smi")
+        .args(["--query-gpu=name,memory.total,memory.free", "--format=csv,noheader,nounits"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8_lossy(&output.stdout);
+    let first_line = text.lines().next()?;
+    let parts: Vec<&str> = first_line.split(',').map(|s| s.trim()).collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let name = parts[0].to_string();
+    let total_mib: u64 = parts[1].parse().ok()?;
+    let free_mib: u64 = parts[2].parse().ok()?;
+    const MIB: u64 = 1024 * 1024;
+    Some((name, total_mib * MIB, free_mib * MIB))
+}
+
+#[tauri::command]
+pub fn get_system_resources() -> Result<SystemResources, String> {
+    let (total_ram_bytes, available_ram_bytes) = ram_stats()?;
+    let (gpu_name, total_vram_bytes, available_vram_bytes) = match nvidia_vram() {
+        Some((name, total, free)) => (Some(name), Some(total), Some(free)),
+        None => (None, None, None),
+    };
+    Ok(SystemResources {
+        total_ram_bytes,
+        available_ram_bytes,
+        gpu_name,
+        total_vram_bytes,
+        available_vram_bytes,
+    })
+}
+
 // Theme pack import (lib/themes.ts::readThemePackFile): reads a pack file
 // from disk through the Rust shell rather than a webview file input, same
 // posture as the read_file/write_file skills — the frontend never touches
