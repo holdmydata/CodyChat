@@ -1,10 +1,10 @@
-import { useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import type { Conversation, ToolCall } from '../types';
 import type { ActivityStep } from '../hooks/useChat';
 import type { LoopState } from '../hooks/useAutonomousLoop';
 import type { PresentationMode } from '../lib/presentation';
 import { ModelPicker } from './ModelPicker';
-import { MessageBubble } from './MessageBubble';
+import { MessageBubble, buildToolResultIndex } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { ToolApprovalPrompt } from './ToolApprovalPrompt';
 import { TurnFlowGraph } from './ActivityTracker';
@@ -60,6 +60,23 @@ export function ChatWindow({
   onStopLoop,
   presentationMode,
 }: ChatWindowProps) {
+  // Pairs each tool call with its result (a separate 'tool'-role message,
+  // matched by toolCallId) so ToolCallChip can show both together in one
+  // collapsed unit instead of two stacked bubbles — see
+  // buildToolResultIndex's own comment for why this needs the whole
+  // message list, not just one message at a time. knownCallIds lets the
+  // render below skip a 'tool' message once its content is already shown
+  // paired inside its call's chip, falling back to a standalone bubble
+  // only for the (normally impossible) orphaned case.
+  const { resultsByCallId, knownCallIds } = useMemo(
+    () => buildToolResultIndex(conversation.messages),
+    [conversation.messages]
+  );
+  const displayMessages = useMemo(
+    () => conversation.messages.filter((m) => !(m.role === 'tool' && m.toolCallId && knownCallIds.has(m.toolCallId))),
+    [conversation.messages, knownCallIds]
+  );
+
   const scrollRef = useRef<HTMLDivElement>(null);
   // Only auto-follow new content if the user is already near the bottom —
   // otherwise streaming tokens/thinking updates yank them back down every
@@ -161,11 +178,12 @@ export function ChatWindow({
             {conversation.messages.length === 0 && (
               <div className="chat-window__empty">Say something to get started.</div>
             )}
-            {conversation.messages.map((m, i) => (
+            {displayMessages.map((m, i) => (
               <MessageBubble
                 key={m.id}
                 message={m}
-                isStreaming={isStreaming && i === conversation.messages.length - 1}
+                isStreaming={isStreaming && i === displayMessages.length - 1}
+                toolResults={resultsByCallId}
               />
             ))}
             {error && <div className="chat-window__error">{error}</div>}

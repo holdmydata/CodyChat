@@ -872,12 +872,39 @@ input[type='range']::-moz-range-thumb:hover {
   opacity: 1;
 }
 
+.message__tool-call-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.message__tool-call-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.message__tool-call-detail-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+}
+
 .message__tool-call-args {
   display: block;
-  margin-top: 4px;
   font-size: 11px;
+  font-family: var(--mono);
   opacity: 0.8;
   overflow-wrap: anywhere;
+}
+
+/* Nested inside a call's paired detail section now, not just the
+   standalone ToolResultBubble — drop that context's own top margin, the
+   section's gap already spaces it from the "Result" label above it. */
+.message__tool-call-detail .message__tool-result {
+  margin-top: 0;
 }
 
 .message__images {

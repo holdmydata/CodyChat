@@ -1,8 +1,8 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Sparkles } from '@react-three/drei';
 import type { Conversation } from '../types';
-import { MessageBubble } from './MessageBubble';
+import { MessageBubble, buildToolResultIndex } from './MessageBubble';
 import { readCssColor, useThemeVersion } from '../lib/threeTheme';
 
 interface ChatHistory3DProps {
@@ -52,6 +52,19 @@ function Backdrop({ color }: { color: string }) {
 
 export function ChatHistory3D({ conversation, isStreaming, error }: ChatHistory3DProps) {
   const themeVersion = useThemeVersion();
+  // Same pairing as ChatWindow.tsx's flat view — see buildToolResultIndex's
+  // own comment. Duplicated rather than shared via props, matching this
+  // component's existing "mirror the pattern, not the exact code" relationship
+  // to ChatWindow.tsx (see the scroll effects below).
+  const { resultsByCallId, knownCallIds } = useMemo(
+    () => buildToolResultIndex(conversation.messages),
+    [conversation.messages]
+  );
+  const displayMessages = useMemo(
+    () => conversation.messages.filter((m) => !(m.role === 'tool' && m.toolCallId && knownCallIds.has(m.toolCallId))),
+    [conversation.messages, knownCallIds]
+  );
+
   const scrollRef = useRef<HTMLDivElement>(null);
   // Same pattern as ChatWindow.tsx: only auto-follow new content if the
   // user is already near the bottom, and the ref is the source of truth
@@ -135,13 +148,17 @@ export function ChatHistory3D({ conversation, isStreaming, error }: ChatHistory3
         {conversation.messages.length === 0 && (
           <div className="chat-window__empty">Say something to get started.</div>
         )}
-        {conversation.messages.map((m, i) => (
+        {displayMessages.map((m, i) => (
           <div
             key={m.id}
             className={`chat-history-3d__card chat-history-3d__card--${m.role}`}
             style={{ animationDelay: `0s, -${phaseFor(m.id) * IDLE_DURATION}s` }}
           >
-            <MessageBubble message={m} isStreaming={isStreaming && i === conversation.messages.length - 1} />
+            <MessageBubble
+              message={m}
+              isStreaming={isStreaming && i === displayMessages.length - 1}
+              toolResults={resultsByCallId}
+            />
           </div>
         ))}
         {error && <div className="chat-window__error">{error}</div>}
