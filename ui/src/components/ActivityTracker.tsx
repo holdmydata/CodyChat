@@ -97,9 +97,19 @@ export function TurnFlowGraph({ steps, thinking, variant = 'log' }: TurnFlowGrap
               aria-pressed={selectedId === node.id}
               aria-label={`${node.label} — ${selectedId === node.id ? 'hide' : 'show'} details`}
             >
-              <span className="turn-flow__node-icon">
-                {node.kind === 'thinking' ? '🧠' : STATUS_ICON[node.status]}
-              </span>
+              {/* A running tool call gets a real spinning-ring indicator
+                  instead of the static ⏳ emoji — reads as "actively
+                  working" much more clearly than an opacity pulse on a
+                  still image did. Every other status keeps its emoji, all
+                  of which are genuinely terminal/static states a spinner
+                  wouldn't fit. */}
+              {node.kind === 'tool' && node.status === 'running' ? (
+                <span className="turn-flow__spinner" aria-hidden="true" />
+              ) : (
+                <span className="turn-flow__node-icon">
+                  {node.kind === 'thinking' ? '🧠' : STATUS_ICON[node.status]}
+                </span>
+              )}
               <code className="turn-flow__node-label">{node.label}</code>
             </button>
           </div>

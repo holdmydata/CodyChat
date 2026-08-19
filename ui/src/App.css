@@ -1124,10 +1124,22 @@ input[type='range']::-moz-range-thumb:hover {
 
 .turn-flow--live {
   padding: 10px 16px;
-  border-top: 1px solid var(--border);
+  border-top: 2px solid var(--accent-border);
   background: var(--bg-alt);
   max-height: 200px;
   overflow-y: auto;
+  animation: turn-flow-live-in 0.2s ease-out both;
+}
+
+@keyframes turn-flow-live-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .turn-flow--log {
@@ -1145,6 +1157,27 @@ input[type='range']::-moz-range-thumb:hover {
   display: inline-flex;
   align-items: center;
   gap: 2px;
+  /* Keyed by node.id, so this only plays for a genuinely new node mounting
+     (a fresh tool call/thinking step arriving), not on every re-render of
+     already-shown ones — React reuses the existing DOM node for those. */
+  animation: turn-flow-item-in 0.2s ease-out both;
+}
+
+@keyframes turn-flow-item-in {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-flow__item {
+    animation: none;
+  }
 }
 
 .turn-flow__connector {
@@ -1163,15 +1196,18 @@ input[type='range']::-moz-range-thumb:hover {
   font-size: 12px;
   background: var(--bg);
   border: 1px solid var(--border);
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .turn-flow__node:hover {
   background: var(--bg-alt);
+  border-color: var(--accent-border);
 }
 
 .turn-flow__node--selected {
   background: var(--accent-bg);
   border-color: var(--accent-border);
+  box-shadow: 0 0 8px 0 color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 .turn-flow__node--thinking {
@@ -1183,28 +1219,46 @@ input[type='range']::-moz-range-thumb:hover {
   border-style: dashed;
 }
 
-/* In-progress node: accent border + pulsing icon so the active step reads
-   at a glance in the live chain. */
+/* In-progress node: accent border + a real spinning-ring indicator
+   (turn-flow__spinner, rendered in place of the static icon — see
+   ActivityTracker.tsx) plus a breathing glow, so the active step reads as
+   genuinely "working" rather than just differently colored. */
 .turn-flow__node--running {
   border-color: var(--accent-border);
+  animation: turn-flow-node-pulse 1.6s ease-in-out infinite;
 }
 
-.turn-flow__node--running .turn-flow__node-icon {
-  animation: turn-flow-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes turn-flow-pulse {
+@keyframes turn-flow-node-pulse {
   0%,
   100% {
-    opacity: 1;
+    box-shadow: 0 0 6px 0 color-mix(in srgb, var(--accent) 35%, transparent);
   }
   50% {
-    opacity: 0.4;
+    box-shadow: 0 0 14px 2px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
+
+.turn-flow__spinner {
+  flex-shrink: 0;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--accent);
+  animation: turn-flow-spin 0.7s linear infinite;
+}
+
+@keyframes turn-flow-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .turn-flow__node--running .turn-flow__node-icon {
+  .turn-flow__node--running {
+    animation: none;
+  }
+  .turn-flow__spinner {
     animation: none;
   }
 }
