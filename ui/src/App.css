@@ -442,6 +442,96 @@ input[type='range']::-moz-range-thumb:hover {
   color: var(--danger);
 }
 
+/* Companion visual — see docs/companion-duck-architecture.md for the full
+   asset spec (poses, palette, sizing). Renders nothing but blank space
+   until the actual PNGs are dropped into public/duck/ (DuckPanel.tsx's
+   onError handling), so this ships safely ahead of the art existing. */
+.duck-avatar {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 12px auto 0;
+  flex-shrink: 0;
+}
+
+.duck-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.duck-avatar--idle img {
+  animation: duck-idle-bob 3s ease-in-out infinite;
+}
+
+@keyframes duck-idle-bob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+.duck-avatar--thinking img {
+  animation: duck-thinking-tilt 2.4s ease-in-out infinite;
+}
+
+@keyframes duck-thinking-tilt {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  50% {
+    transform: rotate(-4deg);
+  }
+}
+
+/* Two stacked frames, hard-cut (steps(1), not a cross-fade) so it reads as
+   a mouth flap rather than a dissolve — the closed frame sits static
+   underneath as the base, the open frame's opacity toggles on top of it. */
+.duck-avatar__talk-open {
+  opacity: 0;
+  animation: duck-talk-flap 0.5s steps(1) infinite;
+}
+
+@keyframes duck-talk-flap {
+  0%,
+  49% {
+    opacity: 0;
+  }
+  50%,
+  100% {
+    opacity: 1;
+  }
+}
+
+.duck-avatar--happy img {
+  animation: duck-happy-pop 0.4s ease-out both;
+}
+
+@keyframes duck-happy-pop {
+  0% {
+    transform: scale(0.85);
+  }
+  55% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .duck-avatar img,
+  .duck-avatar__talk-open {
+    animation: none;
+  }
+}
+
 .chat-window {
   flex: 1;
   display: flex;

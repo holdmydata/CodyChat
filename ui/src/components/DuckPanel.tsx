@@ -1,8 +1,76 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useChat } from '../hooks/useChat';
 import { useDuckConversation } from '../hooks/useDuckConversation';
 import { ChatWindow } from './ChatWindow';
+import type { Message } from '../types';
+
+type DuckPose = 'idle' | 'thinking' | 'talking' | 'happy';
+
+// Image files aren't shipped with the app — see
+// docs/companion-duck-architecture.md's asset spec. Drop them in
+// public/fonts/-style at public/duck/<name>.png and they're picked up with
+// zero further code changes; until then this renders nothing (no broken-
+// image icon), same "degrade quietly" posture as an unset theme font.
+const POSE_SRC: Record<Exclude<DuckPose, 'talking'>, string> = {
+  idle: '/duck/duck-idle.png',
+  thinking: '/duck/duck-thinking.png',
+  happy: '/duck/duck-happy.png',
+};
+const TALK_CLOSED_SRC = '/duck/duck-talk-closed.png';
+const TALK_OPEN_SRC = '/duck/duck-talk-open.png';
+
+// How long the one-shot "happy" pop plays after a reply finishes, before
+// falling back to idle — long enough to notice, short enough that it
+// still reads as a reaction to *this* reply, not a stuck state.
+const HAPPY_DURATION_MS = 2200;
+
+function computePose(messages: Message[], isStreaming: boolean, justReplied: boolean): DuckPose {
+  if (justReplied) return 'happy';
+  const last = messages[messages.length - 1];
+  if (isStreaming && last?.role === 'assistant') {
+    const stillThinking = Boolean(last.thinking) && !last.content && !last.toolCalls?.length;
+    return stillThinking ? 'thinking' : 'talking';
+  }
+  return 'idle';
+}
+
+// A single <img> per pose except 'talking', which stacks two frames and
+// lets a CSS keyframe hard-cut between them (steps(1), not a cross-fade —
+// reads as a mouth flap, not a dissolve). onError hides a pose's own <img>
+// silently rather than showing a broken-image icon, so the avatar area
+// just stays visually quiet for whichever poses haven't been dropped in
+// yet instead of looking broken.
+function DuckAvatar({ pose }: { pose: DuckPose }) {
+  const [failed, setFailed] = useState<Set<string>>(new Set());
+  const markFailed = (src: string) => setFailed((prev) => new Set(prev).add(src));
+
+  if (pose === 'talking') {
+    return (
+      <div className={`duck-avatar duck-avatar--${pose}`}>
+        {!failed.has(TALK_CLOSED_SRC) && (
+          <img src={TALK_CLOSED_SRC} alt="" onError={() => markFailed(TALK_CLOSED_SRC)} />
+        )}
+        {!failed.has(TALK_OPEN_SRC) && (
+          <img
+            className="duck-avatar__talk-open"
+            src={TALK_OPEN_SRC}
+            alt=""
+            onError={() => markFailed(TALK_OPEN_SRC)}
+          />
+        )}
+      </div>
+    );
+  }
+
+  const src = POSE_SRC[pose];
+  if (failed.has(src)) return <div className={`duck-avatar duck-avatar--${pose}`} />;
+  return (
+    <div className={`duck-avatar duck-avatar--${pose}`}>
+      <img src={src} alt="" onError={() => markFailed(src)} />
+    </div>
+  );
+}
 
 interface DuckPanelProps {
   open: boolean;
@@ -56,6 +124,27 @@ export function DuckPanel({ open, onClose, baseUrl, defaultModel }: DuckPanelPro
     onMessagesChange: setMessages,
   });
 
+  // One-shot "happy" pop when a reply actually finishes — tracks the
+  // isStreaming true->false edge rather than just "isStreaming is false"
+  // (which is also true before the very first message, and would fire
+  // happy on mount) or a message-count change (which fires on the user's
+  // own message too, before any reply exists yet).
+  const wasStreamingRef = useRef(false);
+  const [justReplied, setJustReplied] = useState(false);
+  useEffect(() => {
+    const last = conversation?.messages[conversation.messages.length - 1];
+    const justFinished =
+      wasStreamingRef.current && !isStreaming && last?.role === 'assistant' && Boolean(last.content);
+    wasStreamingRef.current = isStreaming;
+    if (justFinished) {
+      setJustReplied(true);
+      const timer = setTimeout(() => setJustReplied(false), HAPPY_DURATION_MS);
+      return () => clearTimeout(timer);
+    }
+  }, [isStreaming, conversation]);
+
+  const pose = computePose(conversation?.messages ?? [], isStreaming, justReplied);
+
   return (
     <div className={`duck-panel${open ? ' duck-panel--open' : ''}`} aria-hidden={!open}>
       <div className="duck-panel__header">
@@ -64,6 +153,7 @@ export function DuckPanel({ open, onClose, baseUrl, defaultModel }: DuckPanelPro
           <X size={16} />
         </button>
       </div>
+      <DuckAvatar pose={pose} />
       {conversation && (
         <ChatWindow
           conversation={conversation}
