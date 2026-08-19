@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { X } from 'lucide-react';
 import { useChat } from '../hooks/useChat';
 import { useDuckConversation } from '../hooks/useDuckConversation';
@@ -7,7 +8,12 @@ interface DuckPanelProps {
   open: boolean;
   onClose: () => void;
   baseUrl: string;
-  /** Seeds a brand-new duck conversation's model — the active main conversation's model if there is one, so the duck starts usable instead of needing its own separate first-run model pick. Only used once, at creation; the duck's own model can diverge afterward via its own picker. */
+  /**
+   * The main app's current active model. No separate duck-specific model
+   * picker (removed after live feedback — "it'll most likely always be
+   * the current model being used") — the duck just tracks this live
+   * instead, kept in sync below rather than only seeded once at creation.
+   */
   defaultModel: string;
 }
 
@@ -21,6 +27,17 @@ interface DuckPanelProps {
 // only the entrance; see .duck-panel/.duck-panel--open in App.css.
 export function DuckPanel({ open, onClose, baseUrl, defaultModel }: DuckPanelProps) {
   const { conversation, setMessages, updateConversation } = useDuckConversation(defaultModel);
+
+  // Keeps the duck on whatever model the main chat is currently using,
+  // rather than a separate picker to maintain — only writes when they've
+  // actually diverged, and never overwrites with an empty model (a
+  // conversation with no main chat active yet), which would leave the
+  // duck's input dead with no picker left to fix it.
+  useEffect(() => {
+    if (conversation && defaultModel && conversation.model !== defaultModel) {
+      updateConversation(conversation.id, { model: defaultModel });
+    }
+  }, [conversation, defaultModel, updateConversation]);
 
   const {
     sendMessage,
@@ -63,6 +80,7 @@ export function DuckPanel({ open, onClose, baseUrl, defaultModel }: DuckPanelPro
           canContinue={canContinue}
           onContinue={continueTurn}
           presentationMode="flat"
+          compact
         />
       )}
     </div>
