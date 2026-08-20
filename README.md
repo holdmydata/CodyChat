@@ -3,22 +3,56 @@
 </p>
 
 <p align="center">
-  A custom, Ollama-backed desktop chat agent - for us, by me.
+  A custom, Ollama-backed desktop chat agent — local-first, tool-using, and yours to reskin.
 </p>
 
 ---
 
-CodyChat is a Tauri (Rust) desktop shell around a React/TypeScript chat UI that talks directly to a local [Ollama](https://ollama.com) instance. It's built to work like an agentic coding assistant — real tool-calling with per-call approval, not just request/response chat — while staying fully local and model-agnostic.
+CodyChat is a Tauri (Rust) desktop shell around a React/TypeScript chat UI that talks directly to a local [Ollama](https://ollama.com) instance. It's built to work like an agentic coding assistant — real tool-calling with per-call approval, a searchable memory, autonomous task runs — while staying fully local and model-agnostic. No account, no cloud dependency, nothing leaves your machine unless a tool you approved (like `web_fetch`) needs to.
+
+<!--
+  Screenshots go here — drop image files into docs/screenshots/ and
+  reference them below, e.g.:
+
+  <p align="center">
+    <img src="docs/screenshots/chat.png" width="800" alt="Chat view">
+  </p>
+  <p align="center">
+    <img src="docs/screenshots/spatial.png" width="800" alt="Spatial chat mode">
+  </p>
+-->
 
 ## Features
 
-- **Streaming chat** against any local Ollama model, with a collapsible "thought process" breakout for models that emit thinking tokens.
-- **Real tool-calling, gated by explicit approval** — `read_file`, `write_file`, a patch-style `edit_file` (find/replace, not a full overwrite), `list_directory`, `search_files` (grep-like), and `execute_command` (shell). Every call shows a real in-app Approve/Deny prompt with a risk badge (Read-only / Write / Execute) before it runs — nothing executes silently.
-- **MCP connector support** — hook up external [Model Context Protocol](https://modelcontextprotocol.io) servers as additional tools, alongside the built-ins, through the same approval flow.
-- **Theme packs** — the whole UI reads colors from a small set of CSS variables, so a full reskin is just a shareable JSON palette. Built-ins: Auto (follows the OS), Light, Dark, and Psyduck Yellow. Import a pack by pasting JSON or picking a file.
-- **Per-conversation settings** — system prompt, temperature / top-p / context length, and "save as custom model" (bakes a system prompt into a real Ollama model via `/api/create`).
-- **Turn-flow activity graph** — see the actual shape of a run (thinking → tool call → tool call → answer) as a horizontal node chain, not just a flat log of steps.
-- **Frameless widget-style window** — tray icon, corner-pop positioning, slide-in/out animation, always-on-top toggle.
+### Chat
+- Streaming chat against any local Ollama model, with a collapsible "thought process" breakout for models that emit thinking tokens.
+- Two presentation modes, switchable in Settings: a plain flat scrollback, or a **spatial** mode — the same conversation rendered with WebGL glow/animation polish (Three.js kept strictly to non-interactive decoration; every interactive surface stays real DOM/CSS).
+- Paste an image straight into the message box for vision-capable models.
+- Per-conversation system prompt, temperature / top-p / context length, and "save as custom model" (bakes a system prompt + sampling params into a real Ollama model via `/api/create`).
+
+### Tool-calling, gated by explicit approval
+- Built-in tools: `read_file`, `write_file`, a patch-style `edit_file` (find/replace, not a full overwrite), `list_directory`, `search_files` (grep-like), `execute_command` (shell), `web_fetch` (SSRF-guarded — blocks loopback/private/link-local addresses, pinned redirects), and `search_memory`.
+- Every call shows a real in-app Approve/Deny prompt with a risk badge (Read-only / Write / Execute) before it runs — nothing executes silently.
+- **MCP connector support** — hook up external [Model Context Protocol](https://modelcontextprotocol.io) servers as additional tools, through the same approval flow.
+- **RAM/VRAM forecaster** in Settings — estimates whether a model will actually fit before you load it, reacting live to the context-length slider.
+
+### Memory
+- Local vector memory (`sqlite-vec` + `nomic-embed-text` embeddings, no separate server process) — the model can `search_memory` on demand instead of everything living only in the current context window.
+- A 3D memory graph view for actually *seeing* what's been remembered and how it clusters, not just querying it blind.
+
+### Autonomous runs
+- A [loopx](https://github.com/huangruiteng/loopx)-driven autonomous loop mode — durable goals/todos/evidence logs and user-gated quotas, not just one-shot request/response chat.
+
+### Companion duck
+- A right-side docked panel (toggle from the titlebar) with its own persistent, separate conversation — a small companion with pose-based avatar art that reacts to what's actually happening (idle, thinking, talking, a happy pop when it replies).
+
+### Theming & visuals
+- **Theme packs** — the whole UI reads colors from a small set of CSS variables, so a full reskin is just a shareable JSON palette. Built-ins: Auto (follows the OS), Light, Dark, Psycho Duck, and League Hextech. Import a pack by pasting JSON or picking a file.
+- Bundled fonts (Quicksand, Fredoka, Nunito Sans — confirmed OFL-licensed before vendoring) so theme-requested fonts actually render, not just on machines that happen to have them installed.
+- A real vector icon set ([lucide-react](https://lucide.dev)) throughout, recoloring per-theme via `currentColor`.
+
+### Window & tray
+- Frameless widget-style window — tray icon, corner-pop positioning, slide-in/out animation, and a one-click expand/collapse between a compact widget and the full window.
 
 ## Getting started
 
@@ -35,9 +69,9 @@ Ollama is expected at `http://localhost:11434` by default — configurable in Se
 ## Project structure
 
 - **`ui/`** — the actual app: Tauri (Rust) shell + React/TS frontend. See [`ui/README.md`](ui/README.md) for how the frontend is structured and where the harness extension point is.
-- **`docs/`** — an Obsidian vault with the running planning/decision log, architecture notes, and task board. Start at `docs/MEMORY.md` if you want the full history of how this got built.
+- **`docs/`** — public reference material (currently `system_info.md`; more may land here over time). Planning/decision history lives in a private, local-only vault that isn't part of this repo.
 - **`harness/`** — early Python-based agent/harness experiments (Ollama tool-dispatch, [loopx](https://github.com/huangruiteng/loopx) control-plane integration).
-- **`toys/kanban-reader/`** — a throwaway Tauri/Rust practice app (reads `docs/Kanban.md`), not part of the shipped product.
+- **`toys/kanban-reader/`** — a throwaway Tauri/Rust practice app, not part of the shipped product.
 
 ## Status
 

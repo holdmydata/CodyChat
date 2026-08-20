@@ -4,6 +4,7 @@
 local-docs/
 CLAUDE.md
 AGENTS.md
+
 # OS cruft
 .DS_Store
 Thumbs.db
