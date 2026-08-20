@@ -10,18 +10,6 @@
 
 CodyChat is a Tauri (Rust) desktop shell around a React/TypeScript chat UI that talks directly to a local [Ollama](https://ollama.com) instance. It's built to work like an agentic coding assistant — real tool-calling with per-call approval, a searchable memory, autonomous task runs — while staying fully local and model-agnostic. No account, no cloud dependency, nothing leaves your machine unless a tool you approved (like `web_fetch`) needs to.
 
-<!--
-  Screenshots go here — drop image files into docs/screenshots/ and
-  reference them below, e.g.:
-
-  <p align="center">
-    <img src="docs/screenshots/chat.png" width="800" alt="Chat view">
-  </p>
-  <p align="center">
-    <img src="docs/screenshots/spatial.png" width="800" alt="Spatial chat mode">
-  </p>
--->
-
 ## Features
 
 ### Chat
@@ -71,7 +59,6 @@ Ollama is expected at `http://localhost:11434` by default — configurable in Se
 - **`ui/`** — the actual app: Tauri (Rust) shell + React/TS frontend. See [`ui/README.md`](ui/README.md) for how the frontend is structured and where the harness extension point is.
 - **`docs/`** — public reference material (currently `system_info.md`; more may land here over time). Planning/decision history lives in a private, local-only vault that isn't part of this repo.
 - **`harness/`** — early Python-based agent/harness experiments (Ollama tool-dispatch, [loopx](https://github.com/huangruiteng/loopx) control-plane integration).
-- **`toys/kanban-reader/`** — a throwaway Tauri/Rust practice app, not part of the shipped product.
 
 ## Status
 
