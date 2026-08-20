@@ -25,14 +25,28 @@ const TALK_OPEN_SRC = '/duck/duck-talk-open.png';
 // still reads as a reaction to *this* reply, not a stuck state.
 const HAPPY_DURATION_MS = 2200;
 
+// 'talking' only once real reply content is actually streaming; 'thinking'
+// covers everything else while a turn is in flight — pre-thinking silence,
+// <thinking> text itself, *and* tool-calling rounds (which produce no
+// spoken content at all). Previously excluded any round with toolCalls
+// set from ever counting as "thinking," which meant a turn that ends up
+// calling a tool jumped straight to a mouth-flapping "talking" pose with
+// nothing actually being said — real bug, caught live.
 function computePose(messages: Message[], isStreaming: boolean, justReplied: boolean): DuckPose {
   if (justReplied) return 'happy';
+  if (!isStreaming) return 'idle';
   const last = messages[messages.length - 1];
-  if (isStreaming && last?.role === 'assistant') {
-    const stillThinking = Boolean(last.thinking) && !last.content && !last.toolCalls?.length;
-    return stillThinking ? 'thinking' : 'talking';
-  }
-  return 'idle';
+  return last?.role === 'assistant' && last.content ? 'talking' : 'thinking';
+}
+
+// Small idle-pose icon next to the panel title, replacing the placeholder
+// 🦆 emoji — same "fail silently, no broken-image icon" posture as
+// DuckAvatar below, own tiny failed-state since it's a single fixed image
+// rather than something that switches per pose.
+function DuckHeaderIcon() {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return <img className="duck-panel__title-icon" src={POSE_SRC.idle} alt="" onError={() => setFailed(true)} />;
 }
 
 // A single <img> per pose except 'talking', which stacks two frames and
@@ -148,7 +162,9 @@ export function DuckPanel({ open, onClose, baseUrl, defaultModel }: DuckPanelPro
   return (
     <div className={`duck-panel${open ? ' duck-panel--open' : ''}`} aria-hidden={!open}>
       <div className="duck-panel__header">
-        <span className="duck-panel__title">🦆 {conversation?.title ?? 'Cody'}</span>
+        <span className="duck-panel__title">
+          <DuckHeaderIcon /> {conversation?.title ?? 'Cody'}
+        </span>
         <button type="button" className="duck-panel__close" onClick={onClose} aria-label="Close duck panel">
           <X size={16} />
         </button>

@@ -420,8 +420,17 @@ input[type='range']::-moz-range-thumb:hover {
 }
 
 .duck-panel__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
   color: var(--text-h);
+}
+
+.duck-panel__title-icon {
+  width: 20px;
+  height: 20px;
+  object-fit: contain;
 }
 
 .duck-panel__close {
