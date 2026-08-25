@@ -16,6 +16,10 @@ export function ModelPicker({ baseUrl, backend = 'ollama', value, onChange, refr
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Azure auto-routes per message (lib/router.ts) — there's no fixed
+    // model to list/pick here, and no management-plane permission to list
+    // deployments even if there were.
+    if (backend === 'azure') return;
     let cancelled = false;
     const listModels = backend === 'openai' ? listOpenAIModels : listOllamaModels;
     listModels(baseUrl)
@@ -39,6 +43,17 @@ export function ModelPicker({ baseUrl, backend = 'ollama', value, onChange, refr
       cancelled = true;
     };
   }, [baseUrl, backend, refreshKey]);
+
+  if (backend === 'azure') {
+    return (
+      <span
+        className="model-picker model-picker--auto"
+        title="Azure auto-routes each message to a deployment by task/complexity — see Settings → Azure AI Foundry."
+      >
+        Auto-routed
+      </span>
+    );
+  }
 
   if (error) {
     return <span className="model-picker model-picker--error" title={error}>no models</span>;

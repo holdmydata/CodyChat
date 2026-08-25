@@ -5,6 +5,7 @@ import { sendNotification, isPermissionGranted, requestPermission } from '@tauri
 import { streamChat as ollamaStreamChat, showModel as ollamaShowModel, OllamaError, type TokenUsage, type WireMessage } from '../lib/ollama';
 import { streamChat as openaiStreamChat, showModel as openaiShowModel } from '../lib/openaiCompat';
 import { streamChat as azureStreamChat } from '../lib/azureFoundry';
+import { classifyAndRoute, loadRouterConfig, type RouterConfig } from '../lib/router';
 import { executeSkill, getToolDefinitions, type ToolDefinition } from '../lib/skills';
 import { getEnvironmentInfo, formatEnvironmentContext } from '../lib/environment';
 import { indexMessage } from '../lib/memory';
@@ -188,6 +189,17 @@ export function useChat({
   // auto-swap fix. Fetched lazily per model (via /api/show) and folded back
   // into systemParts so the model's own persona survives regardless.
   const modelSystemCacheRef = useRef<Map<string, string>>(new Map());
+  // Admin-managed task->deployment mapping (lib/router.ts), loaded once and
+  // reused across turns — invalidateRouterConfigCache (below) clears this so
+  // Settings' "Reload router config" button can pick up an edited file
+  // without a full app restart.
+  const routerConfigRef = useRef<RouterConfig | null>(null);
+  // The deployment classifyAndRoute picked for the turn currently in
+  // flight — set once per fresh message/autonomous turn in beginTurn (never
+  // on a Continue resume, see beginTurn's isResume param), read by
+  // streamAssistantReply in place of conv.model for every round-trip within
+  // that turn, tool calls included. null for any non-azure backend.
+  const routedModelRef = useRef<string | null>(null);
   // Set at the end of every runTurn, read by runAutonomousTurn right after
   // beginTurn resolves — a ref rather than state specifically so reading it
   // immediately after the await can't race React's async state batching.
@@ -256,10 +268,15 @@ export function useChat({
       let toolCalls: ToolCall[] | null = null;
       let usage: TokenUsage | null = null;
       const startedAt = performance.now();
+      // Overrides conv.model with whatever beginTurn's classify step routed
+      // this turn to — every round-trip within the turn (tool calls
+      // included) reuses the same routed deployment, since this function is
+      // the one place streamChat is actually invoked.
+      const effectiveModel = backend === 'azure' && routedModelRef.current ? routedModelRef.current : conv.model;
 
       await streamChat({
         baseUrl,
-        model: conv.model,
+        model: effectiveModel,
         messages: history,
         params: conv.params,
         signal,
@@ -304,7 +321,7 @@ export function useChat({
         logGovernanceEvent({
           user: azureAccount || loadGovernanceConfig().fallbackUserName,
           agent: conv.title,
-          model: conv.model,
+          model: effectiveModel,
           backend,
           promptTokens,
           completionTokens,
@@ -561,7 +578,7 @@ export function useChat({
   // abort controller, streaming state, activity log, and the lazy
   // tools/env-context init that used to live only in sendMessage.
   const beginTurn = useCallback(
-    async (msgs: Message[], isAutonomous = false) => {
+    async (msgs: Message[], isAutonomous = false, isResume = false) => {
       if (!conversation) return;
       setError(null);
       setPausedMessages(null);
@@ -591,6 +608,35 @@ export function useChat({
             modelSystemCacheRef.current.set(conversation.model, '');
           }
         }
+        // Classify-and-route once per fresh turn — never on a Continue
+        // resume (isResume), since that's still the same turn that hit the
+        // iteration cap, not a new one; re-classifying it could switch
+        // models mid-task, exactly what pinning routing per-turn is meant
+        // to avoid. routedModelRef is left as whatever it already was in
+        // that case. Not run at all for non-azure backends — routedModelRef
+        // is cleared so streamAssistantReply falls back to conv.model.
+        if (backend === 'azure' && !isResume) {
+          if (!routerConfigRef.current) {
+            routerConfigRef.current = await loadRouterConfig();
+          }
+          const lastUserMessage = [...msgs].reverse().find((m) => m.role === 'user');
+          const classifyStartedAt = performance.now();
+          const route = await classifyAndRoute(routerConfigRef.current, lastUserMessage?.content ?? '');
+          routedModelRef.current = route.deployment;
+          if (route.usage) {
+            logGovernanceEvent({
+              user: azureAccount || loadGovernanceConfig().fallbackUserName,
+              agent: conversation.title,
+              model: routerConfigRef.current.classifierDeployment,
+              backend,
+              promptTokens: route.usage.promptTokens,
+              completionTokens: route.usage.completionTokens,
+              durationMs: performance.now() - classifyStartedAt,
+            });
+          }
+        } else if (backend !== 'azure') {
+          routedModelRef.current = null;
+        }
         await runTurn(msgs, 0, { used: false }, isAutonomous);
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
@@ -601,7 +647,7 @@ export function useChat({
         abortRef.current = null;
       }
     },
-    [baseUrl, showModel, conversation, runTurn]
+    [baseUrl, showModel, conversation, runTurn, backend, azureAccount]
   );
 
   const sendMessage = useCallback(
@@ -631,7 +677,7 @@ export function useChat({
 
   const continueTurn = useCallback(async () => {
     if (!conversation || isStreaming || !pausedMessages) return;
-    await beginTurn(pausedMessages);
+    await beginTurn(pausedMessages, false, true);
   }, [conversation, isStreaming, pausedMessages, beginTurn]);
 
   // Drives a real turn from a synthesized (not user-typed) prompt, for
@@ -666,6 +712,14 @@ export function useChat({
     modelSystemCacheRef.current.clear();
   }, []);
 
+  // Called from Settings' "Reload router config" (AzureSettings.tsx) —
+  // clears the cached config so the next turn's classify step re-reads
+  // router_config.json instead of serving whatever was loaded at the start
+  // of the session.
+  const invalidateRouterConfigCache = useCallback(() => {
+    routerConfigRef.current = null;
+  }, []);
+
   return {
     sendMessage,
     stop,
@@ -679,6 +733,7 @@ export function useChat({
     continueTurn,
     canContinue: pausedMessages !== null,
     invalidateModelSystemCache,
+    invalidateRouterConfigCache,
     runAutonomousTurn,
   };
 }

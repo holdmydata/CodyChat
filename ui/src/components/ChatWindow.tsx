@@ -258,7 +258,11 @@ export function ChatWindow({
       )}
 
       <MessageInput
-        disabled={!conversation.model}
+        // Azure auto-routes per message — there's no manually-picked model
+        // to gate on, so conversation.model (which may be empty, or a stale
+        // value from before routing existed) is never load-bearing here for
+        // that backend.
+        disabled={backend === 'azure' ? false : !conversation.model}
         isStreaming={isStreaming}
         onSend={handleSend}
         onStop={onStop}

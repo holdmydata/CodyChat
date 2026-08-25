@@ -366,6 +366,16 @@ pub fn run() {
             let memory_conn = memory::init_db(&memory_dir)?;
             app.manage(memory::MemoryState(std::sync::Mutex::new(memory_conn)));
 
+            // Seeds the admin-managed model-router mapping (commands.rs's
+            // get_router_config) with a working default on first run, so
+            // there's always something valid to route against rather than
+            // a bare "file not found" the very first time the Azure
+            // backend is used.
+            let router_config_path = memory_dir.join("router_config.json");
+            if !router_config_path.exists() {
+                std::fs::write(&router_config_path, commands::DEFAULT_ROUTER_CONFIG)?;
+            }
+
             // Starts as the compact widget, not the old half-screen
             // default — the widget is the primary surface now; the
             // larger "full experience" size is an explicit expand.
@@ -448,6 +458,8 @@ pub fn run() {
             commands::get_environment_info,
             commands::read_theme_pack,
             commands::get_system_resources,
+            commands::get_router_config,
+            commands::get_router_config_path,
             tasks::get_task_digest,
             tasks::list_tasks,
             tasks::complete_task,

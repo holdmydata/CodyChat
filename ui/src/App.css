@@ -948,6 +948,18 @@ input[type='range']::-moz-range-thumb:hover {
   opacity: 0.6;
 }
 
+/* A settings-panel__field value that isn't editable (e.g. Azure's
+   auto-routed model) — reads like the field actually has a value, not like
+   a disabled input or a faint hint. */
+.settings-panel__readonly-value {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--input-bg, var(--bg-alt));
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text);
+}
+
 .settings-panel__hint--success {
   color: var(--accent);
   opacity: 1;

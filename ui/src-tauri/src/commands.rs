@@ -5,6 +5,7 @@ use std::fs;
 use std::process::Command;
 
 use serde::Serialize;
+use tauri::Manager;
 
 #[derive(Serialize)]
 pub struct AppInfo {
@@ -151,6 +152,56 @@ pub fn get_system_resources() -> Result<SystemResources, String> {
 #[tauri::command]
 pub fn read_theme_pack(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| e.to_string())
+}
+
+const ROUTER_CONFIG_FILENAME: &str = "router_config.json";
+
+// Seeded to disk on first run (see lib.rs's .setup()) so there's always
+// something valid to route against — small/medium/large map straight onto
+// the deployments the user described wanting (phi-4-mini-reasoning for
+// cheap/classification work, gpt-5.6-luna for planning/agent work, a
+// Claude deployment as the complexity-overflow tier). classifierDeployment
+// defaults to the small tier's own deployment — no separate deployment is
+// needed just to classify.
+pub const DEFAULT_ROUTER_CONFIG: &str = r#"{
+  "classifierDeployment": "phi-4-mini-reasoning",
+  "complexityThreshold": 90,
+  "roles": {
+    "small": "phi-4-mini-reasoning",
+    "medium": "gpt-5.6-luna",
+    "large": "claude-sonnet-4.5"
+  },
+  "taskRoutes": {
+    "classification": "small",
+    "summary": "small",
+    "email": "small",
+    "metadata": "small",
+    "api": "small",
+    "planning": "medium",
+    "agent": "medium"
+  }
+}
+"#;
+
+// Deliberately takes no path argument, unlike read_theme_pack above — this
+// is an admin-managed file at one fixed, predictable location (the app's
+// own data dir), not something a user imports/picks per call. Editing the
+// mapping is meant to be "an admin edits this file," not exposed anywhere
+// in the end-user Settings UI.
+#[tauri::command]
+pub fn get_router_config(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let path = dir.join(ROUTER_CONFIG_FILENAME);
+    fs::read_to_string(&path).map_err(|e| format!("{}: {}", path.display(), e))
+}
+
+// Surfaced read-only in Settings so whoever administers the mapping can
+// find the file without digging through Tauri's own docs for where
+// app_data_dir resolves to on a given machine.
+#[tauri::command]
+pub fn get_router_config_path(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(dir.join(ROUTER_CONFIG_FILENAME).display().to_string())
 }
 
 #[cfg(test)]

@@ -187,22 +187,14 @@ export function SettingsPanel({
       <label className="settings-panel__field">
         <span>Model</span>
         {backend === 'azure' ? (
-          <input
-            type="text"
-            value={model}
-            onChange={(e) => onModelChange(e.target.value)}
-            placeholder="model-router"
-          />
+          <span className="settings-panel__readonly-value">
+            Auto-routed — small/medium/large deployment chosen per message by task and complexity (see Settings →
+            Azure AI Foundry).
+          </span>
         ) : (
           <ModelPicker baseUrl={baseUrl} value={model} onChange={onModelChange} refreshKey={modelListRefreshKey} />
         )}
       </label>
-      {backend === 'azure' && (
-        <p className="settings-panel__hint">
-          Should match the deployment name configured above in Azure AI Foundry — Azure deployments aren't listable
-          here the way Ollama/OpenAI-compatible models are.
-        </p>
-      )}
 
       {modelInfoError ? (
         <p className="settings-panel__model-info settings-panel__model-info--error">

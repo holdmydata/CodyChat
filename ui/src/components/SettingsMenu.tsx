@@ -72,6 +72,8 @@ interface SettingsMenuProps {
   onAzureSignIn: () => void;
   onAzureCancelSignIn: () => void;
   onAzureSignOut: () => void;
+  /** Clears useChat's cached model-router config — see AzureSettings.tsx's "Reload router config" and useChat.ts's invalidateRouterConfigCache. */
+  onAzureRouterConfigReload: () => void;
   /** Application Insights connection + fallback-user config for governance telemetry — see lib/governance.ts. Backend-agnostic (shown regardless of which backend is active) since usage on any of them is part of the same governance picture. */
   governanceConfig: GovernanceConfig;
   onGovernanceConfigChange: (config: GovernanceConfig) => void;
@@ -167,6 +169,7 @@ export function SettingsMenu({
   onAzureSignIn,
   onAzureCancelSignIn,
   onAzureSignOut,
+  onAzureRouterConfigReload,
   governanceConfig,
   onGovernanceConfigChange,
 }: SettingsMenuProps) {
@@ -299,6 +302,7 @@ export function SettingsMenu({
                 onSignIn={onAzureSignIn}
                 onCancelSignIn={onAzureCancelSignIn}
                 onSignOut={onAzureSignOut}
+                onRouterConfigReload={onAzureRouterConfigReload}
               />
             )}
 

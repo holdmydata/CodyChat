@@ -8,17 +8,18 @@ import { invoke } from '@tauri-apps/api/core';
 // rather than this module's plaintext localStorage. This module only holds
 // non-secret config (mirrors lib/mcp.ts's split) and thin invoke() wrappers.
 
+// No `deployment` field — which deployment handles a given turn is decided
+// per-message by lib/router.ts, not configured once here. See router.ts
+// for the admin-managed task->deployment mapping.
 export interface AzureConfig {
   tenantId: string;
   clientId: string;
   /** Resource hostname, e.g. "my-resource.openai.azure.com" — scheme/trailing slash tolerated and stripped. */
   resourceEndpoint: string;
-  /** Deployment name, e.g. "model-router" — Azure OpenAI deployments are user-named, so this is typed in directly rather than fetched from a list. */
-  deployment: string;
 }
 
 const AZURE_CONFIG_KEY = 'ollama-ui:azure-config';
-const EMPTY_CONFIG: AzureConfig = { tenantId: '', clientId: '', resourceEndpoint: '', deployment: '' };
+const EMPTY_CONFIG: AzureConfig = { tenantId: '', clientId: '', resourceEndpoint: '' };
 
 // Azure AI resource-access scope — covers Azure OpenAI/Foundry deployments.
 // openid/profile/offline_access are appended Rust-side (azure_start_device_code)
@@ -40,7 +41,6 @@ export function loadAzureConfig(): AzureConfig {
       tenantId: p.tenantId ?? '',
       clientId: p.clientId ?? '',
       resourceEndpoint: p.resourceEndpoint ?? '',
-      deployment: p.deployment ?? '',
     };
   } catch {
     return EMPTY_CONFIG;
@@ -51,9 +51,9 @@ export function saveAzureConfig(config: AzureConfig): void {
   localStorage.setItem(AZURE_CONFIG_KEY, JSON.stringify(config));
 }
 
-export function azureChatCompletionsUrl(config: AzureConfig): string {
+export function azureChatCompletionsUrl(config: AzureConfig, deployment: string): string {
   const host = config.resourceEndpoint.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  return `https://${host}/openai/deployments/${encodeURIComponent(config.deployment)}/chat/completions?api-version=${AZURE_API_VERSION}`;
+  return `https://${host}/openai/deployments/${encodeURIComponent(deployment)}/chat/completions?api-version=${AZURE_API_VERSION}`;
 }
 
 export interface DeviceCodeInfo {

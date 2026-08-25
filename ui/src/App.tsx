@@ -409,6 +409,7 @@ function App() {
     continueTurn,
     canContinue,
     invalidateModelSystemCache,
+    invalidateRouterConfigCache,
     runAutonomousTurn,
   } = useChat({
     baseUrl,
@@ -638,6 +639,7 @@ function App() {
             onAzureSignIn={azure.signIn}
             onAzureCancelSignIn={azure.cancelSignIn}
             onAzureSignOut={azure.signOut}
+            onAzureRouterConfigReload={invalidateRouterConfigCache}
             governanceConfig={governanceConfig}
             onGovernanceConfigChange={handleGovernanceConfigChange}
           />
