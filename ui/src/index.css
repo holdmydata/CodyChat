@@ -163,6 +163,13 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  /* Defensive: this is a desktop app chrome, not a scrollable document —
+     nothing should ever need a horizontal scrollbar here. The real fix for
+     the one known way this happened (MemoryGraphView's controls bar
+     overflowing instead of wrapping) is the min-width:0 fix on .app/
+     .memory-graph-view; this is a backstop against the same class of bug
+     recurring on some future wide row. */
+  overflow-x: hidden;
   /* Was `transparent`, on the assumption window-vibrancy's Mica/Acrylic
      would composite a real blurred backdrop behind it — see the still-open
      investigation in docs/Kanban.md. It doesn't render yet, so a

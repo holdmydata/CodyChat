@@ -70,11 +70,19 @@ fn load_vec_extension(conn: &Connection) -> Result<(), String> {
     }
 }
 
-fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
+// vec0 virtual tables reject ALTER TABLE outright ("virtual tables may not
+// be altered" — confirmed live against the real vendored extension, not
+// assumed) so a new column needs a full rebuild: rename the old table,
+// create the new schema under the real name, copy every row across (the
+// embedding column is a plain BLOB either way, so a raw copy round-trips
+// it correctly — confirmed with a real KNN search against migrated data
+// during that same check), then drop the renamed original. Runs at most
+// once per real schema change, guarded by has_conversation_subject_column
+// below so a fresh (already-current) DB never pays this cost.
+fn migrate_add_conversation_subject_column(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(&format!(
-        "DROP TABLE IF EXISTS messages;
-        DROP TABLE IF EXISTS vec_messages;
-        CREATE VIRTUAL TABLE IF NOT EXISTS memory_items USING vec0(
+        "ALTER TABLE memory_items RENAME TO memory_items_pre_subject;
+        CREATE VIRTUAL TABLE memory_items USING vec0(
             item_id         INTEGER PRIMARY KEY,
             embedding       float[{EMBED_DIM}],
             source_type     TEXT partition key,
@@ -83,7 +91,59 @@ fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
             created_at      INTEGER,
             +message_id     TEXT,
             +source_path    TEXT,
-            +content        TEXT
+            +content        TEXT,
+            +conversation_subject TEXT
+        );
+        INSERT INTO memory_items
+            (item_id, embedding, source_type, conversation_id, role, created_at, message_id, source_path, content, conversation_subject)
+        SELECT item_id, embedding, source_type, conversation_id, role, created_at, message_id, source_path, content, ''
+        FROM memory_items_pre_subject;
+        DROP TABLE memory_items_pre_subject;"
+    ))
+}
+
+// prepare() alone is enough to detect this — SQLite validates column names
+// against the table's declared schema at prepare time, before touching any
+// row data, so this correctly returns false against an empty (0-row) table
+// too, unlike a query-and-check-for-a-result approach would.
+fn has_conversation_subject_column(conn: &Connection) -> bool {
+    conn.prepare("SELECT conversation_subject FROM memory_items LIMIT 0").is_ok()
+}
+
+// A CREATE VIRTUAL TABLE still registers as type='table' in sqlite_master —
+// SQLite has no separate 'virtual' type value there.
+fn table_exists(conn: &Connection, name: &str) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1",
+        params![name],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|r| r.is_some())
+}
+
+fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS messages;
+        DROP TABLE IF EXISTS vec_messages;",
+    )?;
+
+    if table_exists(conn, "memory_items")? && !has_conversation_subject_column(conn) {
+        migrate_add_conversation_subject_column(conn)?;
+    }
+
+    conn.execute_batch(&format!(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS memory_items USING vec0(
+            item_id         INTEGER PRIMARY KEY,
+            embedding       float[{EMBED_DIM}],
+            source_type     TEXT partition key,
+            conversation_id TEXT,
+            role            TEXT,
+            created_at      INTEGER,
+            +message_id     TEXT,
+            +source_path    TEXT,
+            +content        TEXT,
+            +conversation_subject TEXT
         );"
     ))
 }
@@ -136,9 +196,15 @@ fn index_item_in(
         return Ok(());
     }
 
+    // conversation_subject starts empty at index time — it's only known
+    // once someone (the Sidebar's per-conversation button, or the graph's
+    // bulk Classify action) actually generates one, which happens well
+    // after a conversation's messages are first indexed. Backfilled via
+    // update_conversation_subject_in below, keyed on conversation_id, once
+    // it exists.
     conn.execute(
-        "INSERT INTO memory_items (embedding, source_type, conversation_id, role, created_at, message_id, source_path, content)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO memory_items (embedding, source_type, conversation_id, role, created_at, message_id, source_path, content, conversation_subject)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, '')",
         params![
             embedding_to_bytes(embedding),
             source_type,
@@ -155,6 +221,39 @@ fn index_item_in(
     Ok(())
 }
 
+// Backfills every existing memory_item for a conversation once a subject
+// exists — see index_item_in's comment for why this is a separate,
+// after-the-fact step rather than something index_item_in ever has to know
+// about. Empty conversation_id items (documents indexed via indexDocument,
+// not a chat) are never touched since nothing matches that filter.
+//
+// Two-step (select ids, then update each by item_id) rather than one
+// `UPDATE ... WHERE conversation_id = ?` — confirmed live against the real
+// vec0 extension that the direct form fails with "UPDATE on partition key
+// columns are not supported yet," a confusing error since conversation_id
+// isn't the partition key (source_type is); whatever the underlying vec0
+// limitation actually is, filtering by item_id (the real primary key)
+// instead is confirmed to work.
+fn update_conversation_subject_in(conn: &Connection, conversation_id: &str, subject: &str) -> Result<u64, String> {
+    let mut stmt = conn
+        .prepare("SELECT item_id FROM memory_items WHERE conversation_id = ?1")
+        .map_err(|e| e.to_string())?;
+    let ids: Vec<i64> = stmt
+        .query_map(params![conversation_id], |row| row.get(0))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e: rusqlite::Error| e.to_string())?;
+
+    for id in &ids {
+        conn.execute(
+            "UPDATE memory_items SET conversation_subject = ?1 WHERE item_id = ?2",
+            params![subject, id],
+        )
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(ids.len() as u64)
+}
+
 #[derive(Serialize)]
 pub struct MemoryMatch {
     source_type: String,
@@ -164,6 +263,7 @@ pub struct MemoryMatch {
     message_id: String,
     source_path: String,
     content: String,
+    conversation_subject: String,
     distance: f64,
 }
 
@@ -183,7 +283,7 @@ fn search_memory_in(
     // conditionally-appended WHERE fragment is a well-understood pattern
     // that avoids relying on it.
     let mut sql = String::from(
-        "SELECT source_type, conversation_id, role, created_at, message_id, source_path, content, distance
+        "SELECT source_type, conversation_id, role, created_at, message_id, source_path, content, conversation_subject, distance
          FROM memory_items
          WHERE embedding MATCH ?1 AND k = ?2",
     );
@@ -213,7 +313,8 @@ fn search_memory_in(
                 message_id: row.get(4)?,
                 source_path: row.get(5)?,
                 content: row.get(6)?,
-                distance: row.get(7)?,
+                conversation_subject: row.get(7)?,
+                distance: row.get(8)?,
             })
         })
         .map_err(|e| e.to_string())?;
@@ -253,6 +354,16 @@ pub fn index_memory_item(
         created_at,
         &embedding,
     )
+}
+
+#[tauri::command(rename_all = "snake_case")]
+pub fn update_memory_conversation_subject(
+    state: State<MemoryState>,
+    conversation_id: String,
+    subject: String,
+) -> Result<u64, String> {
+    let conn = state.0.lock().map_err(|_| "memory DB lock poisoned".to_string())?;
+    update_conversation_subject_in(&conn, &conversation_id, &subject)
 }
 
 #[tauri::command(rename_all = "snake_case")]
@@ -467,6 +578,78 @@ mod tests {
     }
 
     #[test]
+    fn schema_migration_preserves_existing_rows_and_adds_working_subject_column() {
+        // Simulates a real pre-existing DB from before conversation_subject
+        // existed: build the old-shape table directly (bypassing
+        // create_schema, which always builds the current/new shape) and
+        // index a row into it, then run create_schema again — the same
+        // call init_db makes on every launch — and confirm the row
+        // survived, KNN search still works, and the new column is usable.
+        let conn = Connection::open_in_memory().unwrap();
+        load_vec_extension(&conn).unwrap();
+        conn.execute_batch(&format!(
+            "CREATE VIRTUAL TABLE memory_items USING vec0(
+                item_id         INTEGER PRIMARY KEY,
+                embedding       float[{EMBED_DIM}],
+                source_type     TEXT partition key,
+                conversation_id TEXT,
+                role            TEXT,
+                created_at      INTEGER,
+                +message_id     TEXT,
+                +source_path    TEXT,
+                +content        TEXT
+            );"
+        ))
+        .unwrap();
+        conn.execute(
+            "INSERT INTO memory_items (embedding, source_type, conversation_id, role, created_at, message_id, source_path, content)
+             VALUES (?1, 'chat_message', 'conv-a', 'user', 1000, 'msg-1', '', 'pre-migration row')",
+            params![embedding_to_bytes(&dummy_embedding(1.0))],
+        )
+        .unwrap();
+
+        assert!(!has_conversation_subject_column(&conn));
+        create_schema(&conn).unwrap();
+        assert!(has_conversation_subject_column(&conn));
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM memory_items", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1, "the pre-existing row must survive the migration");
+
+        let results = search_memory_in(&conn, &dummy_embedding(1.0), 1, None, None).unwrap();
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].content, "pre-migration row");
+        assert_eq!(results[0].conversation_subject, "", "migrated rows default to an empty (not-yet-labeled) subject");
+
+        // A second create_schema call (e.g. a normal second app launch)
+        // must be a no-op, not attempt the migration again.
+        create_schema(&conn).unwrap();
+        let count_after: i64 = conn.query_row("SELECT COUNT(*) FROM memory_items", [], |r| r.get(0)).unwrap();
+        assert_eq!(count_after, 1);
+    }
+
+    #[test]
+    fn update_conversation_subject_backfills_matching_rows_only() {
+        let conn = test_conn();
+        index_item_in(&conn, "chat_message", "conv-a", "user", "a1", "", "in conv a", 1000, &dummy_embedding(1.0))
+            .unwrap();
+        index_item_in(&conn, "chat_message", "conv-a", "assistant", "a2", "", "also conv a", 1001, &dummy_embedding(1.0001))
+            .unwrap();
+        index_item_in(&conn, "chat_message", "conv-b", "user", "b1", "", "in conv b", 1002, &dummy_embedding(1.0002))
+            .unwrap();
+
+        let updated = update_conversation_subject_in(&conn, "conv-a", "Fixing Login Timeout Bug").unwrap();
+        assert_eq!(updated, 2, "both conv-a rows should be backfilled, not conv-b's");
+
+        let results = search_memory_in(&conn, &dummy_embedding(1.0), 3, None, None).unwrap();
+        let subject_for = |content: &str| {
+            results.iter().find(|m| m.content == content).unwrap().conversation_subject.clone()
+        };
+        assert_eq!(subject_for("in conv a"), "Fixing Login Timeout Bug");
+        assert_eq!(subject_for("also conv a"), "Fixing Login Timeout Bug");
+        assert_eq!(subject_for("in conv b"), "");
+    }
+
+    #[test]
     fn index_and_search_roundtrip() {
         let conn = test_conn();
         index_item_in(
@@ -669,4 +852,5 @@ mod tests {
         // dedup this would produce 2 edges (a1->a2 and a2->a1) instead of 1.
         assert_eq!(graph.edges.len(), 1);
     }
+
 }

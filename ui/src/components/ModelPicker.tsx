@@ -1,19 +1,23 @@
 import { useEffect, useState } from 'react';
-import { listModels, type OllamaModel } from '../lib/ollama';
+import { listModels as listOllamaModels, type OllamaModel } from '../lib/ollama';
+import { listModels as listOpenAIModels } from '../lib/openaiCompat';
+import type { ChatBackend } from '../hooks/useChat';
 
 interface ModelPickerProps {
   baseUrl: string;
+  backend?: ChatBackend;
   value: string;
   onChange: (model: string) => void;
   refreshKey?: number;
 }
 
-export function ModelPicker({ baseUrl, value, onChange, refreshKey }: ModelPickerProps) {
+export function ModelPicker({ baseUrl, backend = 'ollama', value, onChange, refreshKey }: ModelPickerProps) {
   const [models, setModels] = useState<OllamaModel[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const listModels = backend === 'openai' ? listOpenAIModels : listOllamaModels;
     listModels(baseUrl)
       .then((list) => {
         if (cancelled) return;
@@ -34,7 +38,7 @@ export function ModelPicker({ baseUrl, value, onChange, refreshKey }: ModelPicke
     return () => {
       cancelled = true;
     };
-  }, [baseUrl, refreshKey]);
+  }, [baseUrl, backend, refreshKey]);
 
   if (error) {
     return <span className="model-picker model-picker--error" title={error}>no models</span>;
@@ -58,7 +62,7 @@ export function ModelPicker({ baseUrl, value, onChange, refreshKey }: ModelPicke
       className={`model-picker${currentMissing ? ' model-picker--missing' : ''}`}
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      title={currentMissing ? `"${value}" wasn't found on this Ollama instance — pick a different model.` : undefined}
+      title={currentMissing ? `"${value}" wasn't found on this server — pick a different model.` : undefined}
     >
       {models.length === 0 && <option value="">loading…</option>}
       {needsPlaceholder && <option value="">Select a model…</option>}

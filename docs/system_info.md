@@ -8,7 +8,7 @@ A living record of this AI harness's capabilities, memory system, and how it all
   - **Tauri** (Rust) for the desktop shell + native IPC commands
   - **React + TypeScript** for the chat UI and tool-call wiring
   - **Ollama** running locally as the LLM engine (`qwen3.8-27b` main model, `qwen3.5:9b` for dispatch)
-  - **loopx** (Python via WSL2) as a governance layer for autonomous task loops
+  - A plain per-project `AGENT_TASKS.md` (Obsidian-Kanban-plugin markdown) as the task source for autonomous loops — no external process
 
 ## Core architecture diagram
 
@@ -71,7 +71,7 @@ A living record of this AI harness's capabilities, memory system, and how it all
 |--------------|-------------|
 | `web_page` | Fetched pages from `web_fetch` skill |
 | `file_read` | Files indexed via `read_file` + `remember: true` |
-| `agent_evidence` | loopx task execution evidence (from `buildEvidence()`) |
+| `agent_evidence` | Autonomous-loop task execution evidence (from `buildEvidence()`) |
 | `code_output` | Build artifacts, game outputs, etc. |
 
 ### How retrieval works
@@ -172,7 +172,7 @@ This is a native-Windows-compositor issue, not TypeScript/Rust code. Next leads 
 
 - **Enterprise packaging**: Tauri bundler in place (`tauri build`), installer tested
 - **Multi-backend chat**: Abstract Ollama out so Databricks/Azure AI Foundry can be added as alternatives
-- **Autonomous run UI**: loopx-governed agent loops with visible activity feed
+- **Autonomous run UI**: `AGENT_TASKS.md`-driven agent loops with visible activity feed
 - **Memory graph visualization**: KNN-based node graph showing memory item relationships
 
 ---

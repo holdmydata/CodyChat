@@ -4,6 +4,7 @@ import { OrbitControls, Line } from '@react-three/drei';
 import { forceCenter, forceLink, forceManyBody, forceSimulation } from 'd3-force-3d';
 import type { Simulation, SimulationLinkDatum, SimulationNodeDatum } from 'd3-force';
 import * as THREE from 'three';
+import { Search, SlidersHorizontal, Sparkles, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-react';
 import {
   deleteMemoryItem,
   getMemoryGraph,
@@ -204,7 +205,16 @@ function formatSourceType(sourceType: string): string {
   return sourceType.replace(/_/g, ' ');
 }
 
-export function MemoryGraphView() {
+interface MemoryGraphViewProps {
+  /** conversation id -> title, so a selected node's detail panel can show which conversation it came from — see App.tsx's conversationTitles memo for why this is a plain lookup rather than full Conversation objects. */
+  conversationTitles?: Record<string, string>;
+  /** Bulk-generates a subject for every unlabeled conversation — see App.tsx's handleClassifyAll, which this component is otherwise unaware of the mechanics of. */
+  onClassifyAll?: () => Promise<void>;
+  classifyProgress?: { done: number; total: number } | null;
+  onStopClassify?: () => void;
+}
+
+export function MemoryGraphView({ conversationTitles, onClassifyAll, classifyProgress, onStopClassify }: MemoryGraphViewProps) {
   const themeVersion = useThemeVersion();
   const [graph, setGraph] = useState<MemoryGraph | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -226,6 +236,36 @@ export function MemoryGraphView() {
   const [maxDistance, setMaxDistance] = useState<number | null>(null);
   const [showSimilarityEdges, setShowSimilarityEdges] = useState(true);
   const [showCausalEdges, setShowCausalEdges] = useState(true);
+
+  // Collapses the whole controls bar down to one slim toggle row — floated
+  // 2026-08-20 after a live screenshot of the docked/narrow window showed
+  // the (now correctly wrapping, see the min-width:0 fix) controls taking
+  // 3-4 rows before the graph itself is even visible. Manual, not tied to
+  // window size automatically — simpler than guessing at a width
+  // threshold, and the toggle itself is one click either way.
+  const [controlsCollapsed, setControlsCollapsed] = useState(false);
+
+  // Type-filter popover — same outside-click/Escape pattern as ThemePicker,
+  // reused rather than invented fresh so every popover in this app behaves
+  // identically.
+  const [typeFilterOpen, setTypeFilterOpen] = useState(false);
+  const typeFilterRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!typeFilterOpen) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (typeFilterRef.current && !typeFilterRef.current.contains(e.target as Node)) setTypeFilterOpen(false);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setTypeFilterOpen(false);
+    };
+    document.addEventListener('mousedown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [typeFilterOpen]);
 
   const loadGraph = () => {
     setError(null);
@@ -277,15 +317,36 @@ export function MemoryGraphView() {
     return { simNodes: nodes, simLinks: links };
   }, [graph, hiddenTypes, search, maxDistance, showSimilarityEdges, showCausalEdges]);
 
-  const selectNode = (n: SimNode) => {
-    setSelectedId(n.id);
+  const selectNodeById = (itemId: number) => {
+    setSelectedId(itemId);
     setDetail(null);
     setDetailError(null);
     setConfirmingDelete(false);
-    getMemoryItem(n.id)
+    getMemoryItem(itemId)
       .then(setDetail)
       .catch((err) => setDetailError(String(err)));
   };
+
+  const selectNode = (n: SimNode) => selectNodeById(n.id);
+
+  // Lets the detail panel step through a conversation's real chat order
+  // (chronological, same relationship buildCausalEdges already draws in
+  // the 3D view) via </> buttons instead of having to click each node in
+  // the graph by hand. Walks the full unfiltered graph.nodes, not the
+  // currently-visible simNodes — a type filter or search term hiding a
+  // sibling shouldn't break the chain, it should just jump past it.
+  const causalSiblings = useMemo(() => {
+    if (!detail || !detail.conversationId || !graph) return null;
+    const siblings = graph.nodes
+      .filter((n) => n.conversationId === detail.conversationId)
+      .sort((a, b) => a.createdAt - b.createdAt);
+    const idx = siblings.findIndex((n) => n.itemId === detail.itemId);
+    if (idx === -1) return null;
+    return {
+      prev: idx > 0 ? siblings[idx - 1] : null,
+      next: idx < siblings.length - 1 ? siblings[idx + 1] : null,
+    };
+  }, [detail, graph]);
 
   const closeDetail = () => {
     setSelectedId(null);
@@ -318,62 +379,147 @@ export function MemoryGraphView() {
 
   return (
     <div className="memory-graph-view">
-      <div className="memory-graph-view__controls">
-        <label className="memory-graph-view__neighbors-field">
-          <span>Neighbors per node</span>
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={neighborsPerNode}
-            onChange={(e) => setNeighborsPerNode(Math.max(1, Number(e.target.value) || 1))}
+      <div className="memory-graph-view__controls-header">
+        <button
+          type="button"
+          className="memory-graph-view__controls-toggle"
+          onClick={() => setControlsCollapsed((v) => !v)}
+          aria-expanded={!controlsCollapsed}
+        >
+          <ChevronDown
+            size={14}
+            className="memory-graph-view__controls-toggle-chevron"
+            style={{ transform: controlsCollapsed ? 'rotate(-90deg)' : undefined }}
+            aria-hidden="true"
           />
-        </label>
-
-        <input
-          type="text"
-          className="memory-graph-view__search"
-          placeholder="Search memories…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-
-        {allTypes.length > 1 && (
-          <div className="memory-graph-view__type-filters">
-            {allTypes.map((t) => (
-              <label key={t} className="memory-graph-view__type-filter">
-                <input type="checkbox" checked={!hiddenTypes.has(t)} onChange={() => toggleType(t)} />
-                <span>{formatSourceType(t)}</span>
-              </label>
-            ))}
-          </div>
+          <span>Controls</span>
+        </button>
+        {controlsCollapsed && search && <span className="memory-graph-view__controls-summary">"{search}"</span>}
+        {controlsCollapsed && hiddenTypes.size > 0 && (
+          <span className="memory-graph-view__controls-summary">{hiddenTypes.size} type(s) hidden</span>
         )}
+      </div>
 
-        {maxDistance !== null && distanceBounds.max > distanceBounds.min && (
-          <label className="memory-graph-view__distance-field">
-            <span>Max distance ({maxDistance.toFixed(2)})</span>
+      {!controlsCollapsed && (
+      <div className="memory-graph-view__controls">
+        <div className="memory-graph-view__controls-group memory-graph-view__controls-group--search">
+          <div className="memory-graph-view__search-wrap">
+            <Search size={14} className="memory-graph-view__controls-icon" aria-hidden="true" />
             <input
-              type="range"
-              min={distanceBounds.min}
-              max={distanceBounds.max}
-              step={(distanceBounds.max - distanceBounds.min) / 100 || 0.01}
-              value={maxDistance}
-              onChange={(e) => setMaxDistance(Number(e.target.value))}
+              type="text"
+              className="memory-graph-view__search"
+              placeholder="Search memories…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
             />
-          </label>
-        )}
+          </div>
+        </div>
 
-        <div className="memory-graph-view__type-filters">
-          <label className="memory-graph-view__type-filter">
-            <input type="checkbox" checked={showSimilarityEdges} onChange={() => setShowSimilarityEdges((v) => !v)} />
+        <div className="memory-graph-view__controls-group">
+          <span className="memory-graph-view__controls-label">Filters</span>
+
+          {allTypes.length > 1 && (
+            <div className="memory-graph-view__type-filter-popover" ref={typeFilterRef}>
+              <button
+                type="button"
+                className="memory-graph-view__filter-trigger"
+                onClick={() => setTypeFilterOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={typeFilterOpen}
+              >
+                <SlidersHorizontal size={13} aria-hidden="true" />
+                <span>
+                  Type
+                  {hiddenTypes.size > 0 ? ` (${allTypes.length - hiddenTypes.size}/${allTypes.length})` : ''}
+                </span>
+                <ChevronDown size={13} aria-hidden="true" />
+              </button>
+              {typeFilterOpen && (
+                <div className="memory-graph-view__filter-menu" role="menu">
+                  {allTypes.map((t) => (
+                    <label key={t} className="memory-graph-view__type-filter">
+                      <input type="checkbox" checked={!hiddenTypes.has(t)} onChange={() => toggleType(t)} />
+                      <span>{formatSourceType(t)}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <label className="memory-graph-view__edge-toggle">
             <span>Similarity edges</span>
+            <span className="settings-menu__toggle">
+              <input type="checkbox" checked={showSimilarityEdges} onChange={() => setShowSimilarityEdges((v) => !v)} />
+              <span className="settings-menu__toggle-track" aria-hidden="true" />
+            </span>
           </label>
-          <label className="memory-graph-view__type-filter">
-            <input type="checkbox" checked={showCausalEdges} onChange={() => setShowCausalEdges((v) => !v)} />
-            <span>Causal edges (chat order)</span>
+          <label className="memory-graph-view__edge-toggle">
+            <span>Causal edges</span>
+            <span className="settings-menu__toggle">
+              <input type="checkbox" checked={showCausalEdges} onChange={() => setShowCausalEdges((v) => !v)} />
+              <span className="settings-menu__toggle-track" aria-hidden="true" />
+            </span>
           </label>
         </div>
+
+        <div className="memory-graph-view__controls-group">
+          <span className="memory-graph-view__controls-label">Graph shape</span>
+          <label className="memory-graph-view__neighbors-field">
+            <span>Neighbors/node</span>
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={neighborsPerNode}
+              onChange={(e) => setNeighborsPerNode(Math.max(1, Number(e.target.value) || 1))}
+            />
+          </label>
+
+          {maxDistance !== null && distanceBounds.max > distanceBounds.min && (
+            <label className="memory-graph-view__distance-field">
+              <span>Max distance ({maxDistance.toFixed(2)})</span>
+              <input
+                type="range"
+                min={distanceBounds.min}
+                max={distanceBounds.max}
+                step={(distanceBounds.max - distanceBounds.min) / 100 || 0.01}
+                value={maxDistance}
+                onChange={(e) => setMaxDistance(Number(e.target.value))}
+              />
+            </label>
+          )}
+        </div>
+
+        <div className="memory-graph-view__controls-spacer" />
+
+        {onClassifyAll && (
+          <button
+            type="button"
+            className="memory-graph-view__classify-button"
+            onClick={() => void onClassifyAll()}
+            disabled={!!classifyProgress}
+            title="Generate a subject for every conversation that doesn't have one yet"
+          >
+            <Sparkles size={14} aria-hidden="true" />
+            <span>Classify</span>
+          </button>
+        )}
       </div>
+      )}
+
+      {classifyProgress && (
+        <div className="memory-graph-view__classify-band">
+          <span>
+            Labeling {classifyProgress.done} of {classifyProgress.total}…
+          </span>
+          {onStopClassify && (
+            <button type="button" onClick={onStopClassify}>
+              Stop
+            </button>
+          )}
+        </div>
+      )}
 
       {error ? (
         <p className="memory-graph-view__hint">Couldn't load memory graph: {error}</p>
@@ -397,14 +543,38 @@ export function MemoryGraphView() {
           </Canvas>
           {selectedId !== null && (
             <div className="memory-graph-view__detail">
-              <button
-                type="button"
-                className="memory-graph-view__detail-close"
-                onClick={closeDetail}
-                aria-label="Close"
-              >
-                ×
-              </button>
+              <div className="memory-graph-view__detail-header">
+                {causalSiblings && (causalSiblings.prev || causalSiblings.next) && (
+                  <div className="memory-graph-view__detail-nav">
+                    <button
+                      type="button"
+                      onClick={() => causalSiblings.prev && selectNodeById(causalSiblings.prev.itemId)}
+                      disabled={!causalSiblings.prev}
+                      aria-label="Previous message in this conversation"
+                      title="Previous message in this conversation"
+                    >
+                      <ChevronLeft size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => causalSiblings.next && selectNodeById(causalSiblings.next.itemId)}
+                      disabled={!causalSiblings.next}
+                      aria-label="Next message in this conversation"
+                      title="Next message in this conversation"
+                    >
+                      <ChevronRight size={14} />
+                    </button>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="memory-graph-view__detail-close"
+                  onClick={closeDetail}
+                  aria-label="Close"
+                >
+                  ×
+                </button>
+              </div>
               {detailError ? (
                 <p className="memory-graph-view__hint">Couldn't load: {detailError}</p>
               ) : !detail ? (
@@ -412,6 +582,11 @@ export function MemoryGraphView() {
               ) : (
                 <>
                   <span className="memory-graph-view__detail-type">{formatSourceType(detail.sourceType)}</span>
+                  {detail.conversationId && conversationTitles?.[detail.conversationId] && (
+                    <span className="memory-graph-view__detail-meta">
+                      From: {conversationTitles[detail.conversationId]}
+                    </span>
+                  )}
                   <p className="memory-graph-view__detail-content">{detail.content}</p>
                   {detail.sourcePath && <span className="memory-graph-view__detail-meta">{detail.sourcePath}</span>}
                   <span className="memory-graph-view__detail-meta">{new Date(detail.createdAt).toLocaleString()}</span>

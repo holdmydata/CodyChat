@@ -138,7 +138,17 @@ export async function executeSkill(call: ToolCall, ctx: SkillContext): Promise<s
       if (matches.length === 0) return 'No relevant past context found.';
       return matches
         .map((m) => {
-          const label = m.sourceType === 'chat_message' ? m.role : `${m.sourceType}: ${m.sourcePath}`;
+          // conversation_subject is only populated once someone's actually
+          // generated one for that conversation (see memory.ts's
+          // updateConversationSubject) — most existing conversations won't
+          // have one yet, so this falls back to the plain role label rather
+          // than showing an empty `from ""`.
+          const label =
+            m.sourceType === 'chat_message'
+              ? m.conversationSubject
+                ? `${m.role}, from "${m.conversationSubject}"`
+                : m.role
+              : `${m.sourceType}: ${m.sourcePath}`;
           return `[${new Date(m.createdAt).toISOString()}] (${label}): ${m.content}`;
         })
         .join('\n---\n');

@@ -29,7 +29,7 @@ CodyChat is a Tauri (Rust) desktop shell around a React/TypeScript chat UI that 
 - A 3D memory graph view for actually *seeing* what's been remembered and how it clusters, not just querying it blind.
 
 ### Autonomous runs
-- A [loopx](https://github.com/huangruiteng/loopx)-driven autonomous loop mode — durable goals/todos/evidence logs and user-gated quotas, not just one-shot request/response chat.
+- An autonomous loop mode, not just one-shot request/response chat — pulls its next task from a plain per-project `AGENT_TASKS.md` file (Obsidian-Kanban-plugin-compatible markdown), runs it through the same tool-approval pipeline as normal chat, and writes evidence back on completion. No external dependency: no separate CLI, no WSL, just a markdown file each project already has.
 
 ### Companion duck
 - A right-side docked panel (toggle from the titlebar) with its own persistent, separate conversation — a small companion with pose-based avatar art that reacts to what's actually happening (idle, thinking, talking, a happy pop when it replies).
@@ -58,7 +58,7 @@ Ollama is expected at `http://localhost:11434` by default — configurable in Se
 
 - **`ui/`** — the actual app: Tauri (Rust) shell + React/TS frontend. See [`ui/README.md`](ui/README.md) for how the frontend is structured and where the harness extension point is.
 - **`docs/`** — public reference material (currently `system_info.md`; more may land here over time). Planning/decision history lives in a private, local-only vault that isn't part of this repo.
-- **`harness/`** — early Python-based agent/harness experiments (Ollama tool-dispatch, [loopx](https://github.com/huangruiteng/loopx) control-plane integration).
+- **`harness/`** — early Python-based agent/harness experiments (Ollama tool-dispatch prototype), superseded by the live Rust/TS implementation in `ui/`.
 
 ## Status
 

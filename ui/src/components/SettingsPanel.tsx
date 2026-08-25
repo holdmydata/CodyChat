@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
-import { createModel, listModels, showModel, type ModelInfo } from '../lib/ollama';
+import { createModel, listModels as listOllamaModels, showModel as ollamaShowModel, type ModelInfo } from '../lib/ollama';
+import { listModels as listOpenAIModels, showModel as openaiShowModel } from '../lib/openaiCompat';
 import { forecastFit, getSystemResources, type SystemResources } from '../lib/resourceForecast';
 import { ModelPicker } from './ModelPicker';
 import type { ChatParams } from '../types';
+import type { ChatBackend } from '../hooks/useChat';
 
 interface SettingsPanelProps {
   baseUrl: string;
+  backend?: ChatBackend;
   model: string;
   onModelChange: (model: string) => void;
   /** Bumped after a custom-model save so the picker's fetched list refreshes without needing the header one to also be visible (it isn't, in compact/widget mode — see ChatWindow). */
@@ -27,6 +30,7 @@ function sanitizeModelName(raw: string): string {
 
 export function SettingsPanel({
   baseUrl,
+  backend = 'ollama',
   model,
   onModelChange,
   modelListRefreshKey,
@@ -73,6 +77,7 @@ export function SettingsPanel({
       return;
     }
     let cancelled = false;
+    const listModels = backend === 'openai' ? listOpenAIModels : listOllamaModels;
     listModels(baseUrl)
       .then((list) => {
         if (cancelled) return;
@@ -84,7 +89,7 @@ export function SettingsPanel({
     return () => {
       cancelled = true;
     };
-  }, [baseUrl, model]);
+  }, [baseUrl, backend, model]);
 
   useEffect(() => {
     if (!model) return;
@@ -92,6 +97,7 @@ export function SettingsPanel({
     setModelInfo(null);
     setModelInfoError(null);
 
+    const showModel = backend === 'openai' ? openaiShowModel : ollamaShowModel;
     showModel(baseUrl, model)
       .then((info) => {
         if (cancelled) return;
@@ -126,7 +132,7 @@ export function SettingsPanel({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseUrl, model]);
+  }, [baseUrl, backend, model]);
 
   const maxCtx = modelInfo?.contextLength ?? FALLBACK_MAX_CTX;
   // Real Ollama model names routinely contain characters sanitizeModelName
@@ -159,6 +165,7 @@ export function SettingsPanel({
       setSaveStatus('saved');
       onModelCreated?.();
       if (isUpdate) {
+        const showModel = backend === 'openai' ? openaiShowModel : ollamaShowModel;
         showModel(baseUrl, model)
           .then(setModelInfo)
           .catch(() => {});
@@ -198,7 +205,7 @@ export function SettingsPanel({
         </div>
       ) : null}
 
-      {modelInfo && (
+      {modelInfo && backend !== 'openai' && (
         <label className="settings-panel__field">
           <span>Model's built-in system prompt</span>
           <textarea
@@ -247,37 +254,45 @@ export function SettingsPanel({
         </label>
       </div>
 
-      <div className="settings-panel__field">
-        <span>Save model settings</span>
-        <div className="settings-panel__save-model-row">
-          <input
-            type="text"
-            value={saveName}
-            onChange={(e) => {
-              setSaveName(e.target.value);
-              setSaveStatus('idle');
-            }}
-            placeholder="model name"
-            disabled={!model}
-          />
-          <button type="button" onClick={handleSave} disabled={!saveName.trim() || !model || saveStatus === 'saving'}>
-            {saveStatus === 'saving' ? 'Saving…' : isUpdate ? `Update ${model}` : 'Save as new'}
-          </button>
-        </div>
-        <span className="settings-panel__hint">
-          {isUpdate
-            ? `Bakes the prompt above and the sliders below into ${model} itself — including for other apps using it.`
-            : `Creates a new model based on ${model || '…'}, with the prompt above and sliders below baked in.`}
-        </span>
-        {saveStatus === 'saved' && (
-          <span className="settings-panel__hint settings-panel__hint--success">
-            {isUpdate ? 'Updated.' : "Saved. It's now selectable in the model picker."}
+      {backend === 'openai' ? (
+        <p className="settings-panel__hint">
+          Saving named model variants (baked-in system prompt/params) is an Ollama-only feature — llama-server and
+          other OpenAI-compatible backends serve exactly one model per running instance, chosen at launch, so
+          there's nothing here to save into.
+        </p>
+      ) : (
+        <div className="settings-panel__field">
+          <span>Save model settings</span>
+          <div className="settings-panel__save-model-row">
+            <input
+              type="text"
+              value={saveName}
+              onChange={(e) => {
+                setSaveName(e.target.value);
+                setSaveStatus('idle');
+              }}
+              placeholder="model name"
+              disabled={!model}
+            />
+            <button type="button" onClick={handleSave} disabled={!saveName.trim() || !model || saveStatus === 'saving'}>
+              {saveStatus === 'saving' ? 'Saving…' : isUpdate ? `Update ${model}` : 'Save as new'}
+            </button>
+          </div>
+          <span className="settings-panel__hint">
+            {isUpdate
+              ? `Bakes the prompt above and the sliders below into ${model} itself — including for other apps using it.`
+              : `Creates a new model based on ${model || '…'}, with the prompt above and sliders below baked in.`}
           </span>
-        )}
-        {saveStatus === 'error' && (
-          <span className="settings-panel__hint settings-panel__hint--error">Failed: {saveError}</span>
-        )}
-      </div>
+          {saveStatus === 'saved' && (
+            <span className="settings-panel__hint settings-panel__hint--success">
+              {isUpdate ? 'Updated.' : "Saved. It's now selectable in the model picker."}
+            </span>
+          )}
+          {saveStatus === 'error' && (
+            <span className="settings-panel__hint settings-panel__hint--error">Failed: {saveError}</span>
+          )}
+        </div>
+      )}
 
       <label className="settings-panel__field">
         <span>Temperature: {params.temperature.toFixed(2)}</span>

@@ -209,6 +209,7 @@ input[type='range']::-moz-range-thumb:hover {
   display: flex;
   flex: 1;
   min-height: 0;
+  min-width: 0;
   width: 100%;
 }
 
@@ -371,6 +372,50 @@ input[type='range']::-moz-range-thumb:hover {
   opacity: 1;
   color: var(--danger);
   background: color-mix(in srgb, var(--danger) 18%, transparent);
+}
+
+/* "Generate a topic label" button (Sidebar.tsx, lib/subject.ts) — same
+   quiet-until-hover treatment as the delete button above, accent-tinted
+   instead of danger-tinted since this isn't destructive. */
+.sidebar__item-subject {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: 50%;
+  color: inherit;
+  opacity: 0.5;
+  cursor: pointer;
+  padding: 3px;
+  transition: opacity 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.sidebar__item-subject:hover:not(:disabled) {
+  opacity: 1;
+  color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.sidebar__item-subject:disabled {
+  cursor: default;
+  opacity: 0.25;
+}
+
+.sidebar__item-subject--busy svg {
+  animation: sidebar-subject-spin 0.9s linear infinite;
+}
+
+@keyframes sidebar-subject-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar__item-subject--busy svg {
+    animation: none;
+  }
 }
 
 /* Chat window */
@@ -563,6 +608,14 @@ input[type='range']::-moz-range-thumb:hover {
   border-bottom: 1px solid var(--border);
 }
 
+/* Widget mode: no model picker, so this row is just the context meter —
+   give it back some of the padding the full header needed to balance
+   against the picker's own height. */
+.chat-window__header--compact {
+  padding: 6px 10px;
+  justify-content: flex-end;
+}
+
 .model-picker {
   font: inherit;
   padding: 6px 10px;
@@ -596,6 +649,64 @@ input[type='range']::-moz-range-thumb:hover {
 .model-picker--missing {
   border-color: var(--warning, var(--danger));
   color: var(--warning, var(--danger));
+}
+
+/* Context-window usage indicator (ChatWindow header, ContextMeter.tsx) —
+   estimate only, see the component's own comment. */
+.context-meter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.context-meter__bar {
+  width: 72px;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  overflow: hidden;
+}
+
+.context-meter__fill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s ease, background 0.2s ease;
+}
+
+.context-meter__fill--ok {
+  background: var(--accent);
+}
+
+.context-meter__fill--warn {
+  background: var(--warning, orange);
+}
+
+.context-meter__fill--danger {
+  background: var(--danger);
+}
+
+.context-meter__label {
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+.context-meter__clear {
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.context-meter__clear:hover {
+  border-color: var(--accent-border);
+  color: var(--text-h);
 }
 
 .chat-window__settings-toggle {
@@ -1802,9 +1913,9 @@ input[type='range']::-moz-range-thumb:hover {
   background: color-mix(in srgb, var(--danger) 10%, transparent);
 }
 
-/* Loopx digest */
+/* Task digest */
 
-.loopx-digest {
+.task-digest {
   flex: 1;
   overflow-y: auto;
   padding: 16px;
@@ -1814,7 +1925,7 @@ input[type='range']::-moz-range-thumb:hover {
   color: var(--text);
 }
 
-.loopx-digest--error {
+.task-digest--error {
   margin: auto;
   max-width: 320px;
   text-align: center;
@@ -1822,44 +1933,44 @@ input[type='range']::-moz-range-thumb:hover {
   font-size: 13px;
 }
 
-.loopx-digest__card {
+.task-digest__card {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 14px;
   background: var(--bg-alt);
 }
 
-.loopx-digest__card h3 {
+.task-digest__card h3 {
   margin: 0 0 6px;
   font-size: 14px;
   color: var(--text-h);
   font-family: var(--mono);
 }
 
-.loopx-digest__counts {
+.task-digest__counts {
   margin: 0 0 6px;
   font-size: 12px;
   opacity: 0.7;
 }
 
-.loopx-digest__next {
+.task-digest__next {
   margin: 0;
   font-size: 13px;
   color: var(--text-h);
 }
 
-.loopx-digest__next--idle {
+.task-digest__next--idle {
   opacity: 0.5;
   font-style: italic;
 }
 
-.loopx-digest__error {
+.task-digest__error {
   margin: 0;
   font-size: 13px;
   color: var(--danger);
 }
 
-.loopx-digest__run-controls {
+.task-digest__run-controls {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1867,14 +1978,14 @@ input[type='range']::-moz-range-thumb:hover {
   border-bottom: 1px solid var(--border);
 }
 
-.loopx-digest__max-todos {
+.task-digest__max-tasks {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 13px;
 }
 
-.loopx-digest__max-todos input {
+.task-digest__max-tasks input {
   width: 60px;
   padding: 4px 8px;
   border-radius: var(--radius-sm, 6px);
@@ -1884,7 +1995,7 @@ input[type='range']::-moz-range-thumb:hover {
   font: inherit;
 }
 
-.loopx-digest__run-status {
+.task-digest__run-status {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1893,15 +2004,15 @@ input[type='range']::-moz-range-thumb:hover {
   color: var(--text-h);
 }
 
-.loopx-digest__run-status code {
+.task-digest__run-status code {
   font-family: var(--mono);
 }
 
-.loopx-digest__run-status--stopped {
+.task-digest__run-status--stopped {
   opacity: 0.75;
 }
 
-.loopx-digest__run-status button {
+.task-digest__run-status button {
   padding: 4px 12px;
   border-radius: var(--radius-sm, 6px);
   border: 1px solid var(--accent-border);
@@ -1912,7 +2023,7 @@ input[type='range']::-moz-range-thumb:hover {
   font-size: 12px;
 }
 
-.loopx-digest__run-button {
+.task-digest__run-button {
   margin-top: 8px;
   padding: 6px 14px;
   border-radius: var(--radius-sm, 6px);
@@ -1924,13 +2035,70 @@ input[type='range']::-moz-range-thumb:hover {
   font-size: 12px;
 }
 
-.loopx-digest__run-button:hover:not(:disabled) {
+.task-digest__run-button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-.loopx-digest__run-button:disabled {
+.task-digest__run-button:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.task-digest__toggle-tasks {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.task-digest__toggle-tasks:hover {
+  text-decoration: underline;
+}
+
+.task-digest__task-list {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--input-bg);
+}
+
+.task-digest__task-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.task-digest__task-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-h);
+}
+
+.task-digest__task-status {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  background: var(--bg-alt);
+  opacity: 0.75;
+}
+
+.task-digest__task-item--done .task-digest__task-status {
+  color: var(--success, var(--accent));
 }
 
 /* Reuses .chat-window__continue's base band styling — a "stopped" run is
@@ -2157,7 +2325,7 @@ input[type='range']::-moz-range-thumb:hover {
 }
 
 /* Settings menu — app-level home (Theme / General / Tools), replaces the
-   chat pane the same way LoopxDigest does (see App.tsx's mainView). Distinct
+   chat pane the same way TaskDigest does (see App.tsx's mainView). Distinct
    from .settings-panel, which is the per-conversation model/prompt/params
    panel inline in ChatWindow. */
 
@@ -2401,6 +2569,44 @@ input[type='range']::-moz-range-thumb:hover {
 .settings-menu__toggle input:focus-visible + .settings-menu__toggle-track {
   outline: 2px solid var(--accent-border);
   outline-offset: 2px;
+}
+
+/* Agent behavior hints (Settings → General → agentHints.ts) — same
+   info+toggle row as .settings-menu__tool-row, but stacked with an editable
+   textarea and reset button underneath, so it needs its own non-flex-row
+   wrapper rather than reusing that class directly. */
+.settings-menu__hint-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-menu__hint-item:last-child {
+  border-bottom: none;
+}
+
+.settings-menu__hint-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-menu__link-button {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.settings-menu__link-button:hover {
+  opacity: 0.8;
 }
 
 /* MCP servers panel (Settings → Tools → McpServers.tsx) */
@@ -2823,42 +3029,207 @@ input[type='range']::-moz-range-thumb:hover {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* Same reason min-height:0 exists above, just the horizontal axis: a
+     flex item defaults to min-width:auto, meaning it refuses to shrink
+     below its content's intrinsic width. The controls bar below is wide
+     enough (many labeled controls + a button) that without this, the
+     whole window grows to fit it instead of the controls bar's own
+     flex-wrap:wrap ever getting a narrower width to wrap against —
+     confirmed live (2026-08-20): the control row overflowed the window
+     with a horizontal scrollbar instead of wrapping onto a second line. */
+  min-width: 0;
+}
+
+/* Always-visible slim header the full controls bar collapses under —
+   floated 2026-08-20 after the docked/narrow window screenshot showed the
+   (correctly wrapping, post min-width:0 fix) controls taking 3-4 rows
+   before the graph itself was even visible. */
+.memory-graph-view__controls-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.memory-graph-view__controls-toggle {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.memory-graph-view__controls-toggle:hover {
+  opacity: 1;
+}
+
+.memory-graph-view__controls-toggle-chevron {
+  transition: transform 0.15s ease;
+}
+
+.memory-graph-view__controls-summary {
+  font-size: 11px;
+  opacity: 0.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .memory-graph-view__controls {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 14px;
+  gap: 18px;
   padding: 10px 16px;
   border-bottom: 1px solid var(--border);
 }
 
+/* Groups the flat control-row into Search / Filters / Graph shape sections
+   (2026-08-20 cleanup pass) — a thin left divider is enough to read as
+   "these controls belong together" without a heavier boxed-panel look. */
+.memory-graph-view__controls-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-left: 14px;
+  border-left: 1px solid var(--border);
+}
+
+.memory-graph-view__controls-group--search {
+  padding-left: 0;
+  border-left: none;
+  flex: 1;
+  min-width: 140px;
+}
+
+.memory-graph-view__controls-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.55;
+  white-space: nowrap;
+}
+
+.memory-graph-view__controls-spacer {
+  flex: 1;
+}
+
+/* Icon sits inside the input's own padding (absolute, not a flex sibling)
+   — a flex icon+input pair squeezed the input to near-zero width whenever
+   the controls row ran out of room (see the min-width:0 fix on
+   .memory-graph-view above for the actual overflow bug this was a visible
+   symptom of), which visually read as the icon overlapping the field.
+   This layout can't produce that overlap by construction: the icon is
+   always positioned relative to the wrapper, and the input's own left
+   padding is reserved space for it, not shared space two elements compete
+   for. */
+.memory-graph-view__search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.memory-graph-view__controls-icon {
+  position: absolute;
+  left: 9px;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
 .memory-graph-view__search {
-  padding: 5px 10px;
+  width: 100%;
+  padding: 5px 10px 5px 28px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--input-bg);
   color: var(--text-h);
   font: inherit;
   font-size: 12px;
-  min-width: 160px;
+  min-width: 0;
 }
 
-.memory-graph-view__type-filters {
+/* Type-filter popover — same shape as .theme-picker/.theme-picker__menu
+   (button + absolutely-positioned panel + outside-click/Escape to close). */
+.memory-graph-view__type-filter-popover {
+  position: relative;
+}
+
+.memory-graph-view__filter-trigger {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.memory-graph-view__filter-trigger:hover {
+  border-color: var(--accent-border);
+}
+
+.memory-graph-view__filter-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  padding: 8px;
+  min-width: 160px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-alt);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  z-index: 10;
 }
 
 .memory-graph-view__type-filter {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   font-size: 12px;
   color: var(--text);
   text-transform: capitalize;
   cursor: pointer;
+  padding: 3px 4px;
+  border-radius: 4px;
+}
+
+.memory-graph-view__type-filter:hover {
+  background: var(--hover-bg);
+}
+
+/* Edge-kind toggles restyled onto the app's existing pill-switch language
+   (.settings-menu__toggle, from Settings) rather than plain checkboxes. */
+.memory-graph-view__edge-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
 }
 
 .memory-graph-view__distance-field {
@@ -2870,7 +3241,7 @@ input[type='range']::-moz-range-thumb:hover {
 }
 
 .memory-graph-view__distance-field input[type='range'] {
-  width: 120px;
+  width: 110px;
 }
 
 .memory-graph-view__neighbors-field {
@@ -2882,13 +3253,62 @@ input[type='range']::-moz-range-thumb:hover {
 }
 
 .memory-graph-view__neighbors-field input {
-  width: 56px;
+  width: 48px;
   padding: 4px 6px;
   border-radius: 6px;
   border: 1px solid var(--border);
   background: var(--input-bg);
   color: var(--text-h);
   font: inherit;
+}
+
+/* "Classify" bulk action (Part 3 of local-docs/Architecture/MemoryOntology.md) */
+.memory-graph-view__classify-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: box-shadow 0.15s ease;
+}
+
+.memory-graph-view__classify-button:hover:not(:disabled) {
+  box-shadow: 0 0 10px 0 color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.memory-graph-view__classify-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.memory-graph-view__classify-band {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--accent-bg);
+  color: var(--accent);
+  font-size: 12px;
+}
+
+.memory-graph-view__classify-band button {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--accent-border);
+  background: var(--bg);
+  color: var(--text-h);
+  cursor: pointer;
 }
 
 .memory-graph-view__hint {
@@ -2935,8 +3355,44 @@ input[type='range']::-moz-range-thumb:hover {
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
 }
 
+.memory-graph-view__detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.memory-graph-view__detail-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.memory-graph-view__detail-nav button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--input-bg);
+  color: var(--text);
+  padding: 3px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, opacity 0.15s ease;
+}
+
+.memory-graph-view__detail-nav button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+}
+
+.memory-graph-view__detail-nav button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
 .memory-graph-view__detail-close {
-  float: right;
   border: none;
   background: transparent;
   color: var(--text);

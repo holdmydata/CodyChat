@@ -9,5 +9,8 @@ AGENTS.md
 .DS_Store
 Thumbs.db
 
+# Obsidian local editor state (created when docs/ is opened as a vault)
+docs/.obsidian/
+
 local-assets/
 toys/

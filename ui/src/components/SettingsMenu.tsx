@@ -9,10 +9,15 @@ import type { McpServerConfig } from '../lib/mcp';
 import type { McpServerStatus } from '../hooks/useMcpServers';
 import type { ChatParams } from '../types';
 import type { PresentationMode } from '../lib/presentation';
+import { AGENT_HINTS, type AgentHintSettings } from '../lib/agentHints';
+import type { ChatBackend } from '../hooks/useChat';
 
 interface SettingsMenuProps {
   baseUrl: string;
   onBaseUrlChange: (url: string) => void;
+  /** Which wire protocol baseUrl speaks — see ChatBackend in hooks/useChat.ts. */
+  backend: ChatBackend;
+  onBackendChange: (backend: ChatBackend) => void;
   appVersion?: string;
   tauriVersion?: string;
   themeId: string;
@@ -25,6 +30,12 @@ interface SettingsMenuProps {
   onToggleTool: (name: string) => void;
   autoApproveReadOnly: boolean;
   onToggleAutoApproveReadOnly: () => void;
+  autoApproveWrites: boolean;
+  onToggleAutoApproveWrites: () => void;
+  autoApproveSafeCommands: boolean;
+  onToggleAutoApproveSafeCommands: () => void;
+  safeCommands: string[];
+  onSafeCommandsChange: (next: string[]) => void;
   mcpServers: McpServerConfig[];
   mcpStatusById: Record<string, McpServerStatus>;
   onAddMcpServer: (config: Omit<McpServerConfig, 'id'>) => void;
@@ -48,6 +59,9 @@ interface SettingsMenuProps {
   /** Manual font override — wins over whatever the active pack requests, since packs' fonts (Google Fonts names) aren't bundled and only render if installed locally. Empty string means no override. */
   fontOverride: string;
   onFontOverrideChange: (font: string) => void;
+  /** Standing behavior hints folded into every turn's system prompt — see lib/agentHints.ts. */
+  agentHints: AgentHintSettings;
+  onAgentHintsChange: (next: AgentHintSettings) => void;
 }
 
 // Curated, not free-typed — real bug this replaces: the free-text input
@@ -76,8 +90,8 @@ const FONT_PRESETS: { label: string; value: string }[] = [
 type Tab = 'theme' | 'general' | 'tools';
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'theme', label: 'Theme' },
   { id: 'general', label: 'General' },
+  { id: 'theme', label: 'Theme' },
   { id: 'tools', label: 'Tools' },
 ];
 
@@ -93,6 +107,8 @@ const TABS: { id: Tab; label: string }[] = [
 export function SettingsMenu({
   baseUrl,
   onBaseUrlChange,
+  backend,
+  onBackendChange,
   appVersion,
   tauriVersion,
   themeId,
@@ -104,6 +120,12 @@ export function SettingsMenu({
   onToggleTool,
   autoApproveReadOnly,
   onToggleAutoApproveReadOnly,
+  autoApproveWrites,
+  onToggleAutoApproveWrites,
+  autoApproveSafeCommands,
+  onToggleAutoApproveSafeCommands,
+  safeCommands,
+  onSafeCommandsChange,
   mcpServers,
   mcpStatusById,
   onAddMcpServer,
@@ -124,8 +146,15 @@ export function SettingsMenu({
   onMemoryDisabledChange,
   fontOverride,
   onFontOverrideChange,
+  agentHints,
+  onAgentHintsChange,
 }: SettingsMenuProps) {
-  const [tab, setTab] = useState<Tab>('theme');
+  const [tab, setTab] = useState<Tab>('general');
+  // Local text buffer so typing doesn't fight the parent's parsed array on
+  // every keystroke — parsed into safeCommands (blank lines dropped) only
+  // on blur, same commit-on-blur pattern as the rest of Settings' text
+  // fields.
+  const [safeCommandsText, setSafeCommandsText] = useState(() => safeCommands.join('\n'));
 
   return (
     <div className="settings-menu">
@@ -215,19 +244,99 @@ export function SettingsMenu({
           <section className="settings-menu__section">
             <h3 className="settings-menu__heading">General</h3>
             <label className="settings-panel__field">
-              <span>Ollama base URL</span>
+              <span>Backend</span>
+              <select value={backend} onChange={(e) => onBackendChange(e.target.value as ChatBackend)}>
+                <option value="ollama">Ollama</option>
+                <option value="openai">OpenAI-compatible (llama.cpp / LM Studio / vLLM)</option>
+              </select>
+            </label>
+            <label className="settings-panel__field">
+              <span>{backend === 'openai' ? 'Server base URL' : 'Ollama base URL'}</span>
               <input
                 type="text"
                 value={baseUrl}
                 onChange={(e) => onBaseUrlChange(e.target.value)}
-                placeholder="http://localhost:11434"
+                placeholder={backend === 'openai' ? 'http://localhost:8080' : 'http://localhost:11434'}
               />
             </label>
+            {backend === 'openai' && (
+              <p className="settings-menu__hint">
+                Points at one already-running OpenAI-compatible server (llama-server, LM Studio, vLLM, …) —
+                whichever model it was launched with is the only one available; there's no pull/switch-model list
+                the way Ollama has. Tool calling needs the server started with function-calling support enabled
+                (llama-server: <code>--jinja</code>).
+              </p>
+            )}
+
+            <h4 className="settings-menu__subheading">Agent behavior</h4>
+            <p className="settings-menu__hint">
+              Standing instructions folded into every turn's system prompt, ahead of any per-conversation prompt
+              below. Turn one off or edit its wording to tune how the model behaves — e.g. loosen or drop the
+              thinking-efficiency hint if a particular model already writes content directly without drafting it
+              twice in its thinking first.
+            </p>
+            {AGENT_HINTS.map((hint) => {
+              const state = agentHints[hint.id];
+              return (
+                <div key={hint.id} className="settings-menu__hint-item">
+                  <div className="settings-menu__hint-header">
+                    <div className="settings-menu__tool-info">
+                      <div className="settings-menu__tool-name">
+                        <span>{hint.title}</span>
+                      </div>
+                      <p className="settings-menu__tool-desc">{hint.description}</p>
+                    </div>
+                    <label className="settings-menu__toggle">
+                      <input
+                        type="checkbox"
+                        checked={state.enabled}
+                        onChange={() =>
+                          onAgentHintsChange({
+                            ...agentHints,
+                            [hint.id]: { ...state, enabled: !state.enabled },
+                          })
+                        }
+                        aria-label={state.enabled ? `Disable ${hint.title}` : `Enable ${hint.title}`}
+                      />
+                      <span className="settings-menu__toggle-track" aria-hidden="true" />
+                    </label>
+                  </div>
+                  <label className="settings-panel__field">
+                    <textarea
+                      value={state.text}
+                      disabled={!state.enabled}
+                      onChange={(e) =>
+                        onAgentHintsChange({
+                          ...agentHints,
+                          [hint.id]: { ...state, text: e.target.value },
+                        })
+                      }
+                      rows={3}
+                    />
+                  </label>
+                  {state.text !== hint.defaultText && (
+                    <button
+                      type="button"
+                      className="settings-menu__link-button"
+                      onClick={() =>
+                        onAgentHintsChange({
+                          ...agentHints,
+                          [hint.id]: { ...state, text: hint.defaultText },
+                        })
+                      }
+                    >
+                      Reset to default
+                    </button>
+                  )}
+                </div>
+              );
+            })}
 
             <h4 className="settings-menu__subheading">Active conversation</h4>
             {hasActiveConversation ? (
               <SettingsPanel
                 baseUrl={baseUrl}
+                backend={backend}
                 model={activeModel}
                 onModelChange={onModelChange}
                 modelListRefreshKey={modelListRefreshKey}
@@ -282,6 +391,71 @@ export function SettingsMenu({
                   checked={autoApproveReadOnly}
                   onChange={onToggleAutoApproveReadOnly}
                   aria-label={`${autoApproveReadOnly ? 'Disable' : 'Enable'} auto-approve for read-only tools`}
+                />
+                <span className="settings-menu__toggle-track" aria-hidden="true" />
+              </label>
+            </div>
+
+            <div className="settings-menu__tool-row">
+              <div className="settings-menu__tool-info">
+                <div className="settings-menu__tool-name">
+                  <span>Auto-approve write tools</span>
+                  <span className="settings-menu__risk-badge settings-menu__risk-badge--write">Write</span>
+                </div>
+                <p className="settings-menu__tool-desc">
+                  Skip the approval prompt for write_file and edit_file too. execute_command (arbitrary shell
+                  commands — where an actual delete would happen) always still asks, regardless of this setting. So
+                  does every write call made by an unattended autonomous run — this only covers chat you're actively
+                  driving.
+                </p>
+              </div>
+              <label className="settings-menu__toggle">
+                <input
+                  type="checkbox"
+                  checked={autoApproveWrites}
+                  onChange={onToggleAutoApproveWrites}
+                  aria-label={`${autoApproveWrites ? 'Disable' : 'Enable'} auto-approve for write tools`}
+                />
+                <span className="settings-menu__toggle-track" aria-hidden="true" />
+              </label>
+            </div>
+
+            <div className="settings-menu__tool-row">
+              <div className="settings-menu__tool-info">
+                <div className="settings-menu__tool-name">
+                  <span>Auto-approve safe commands</span>
+                  <span className="settings-menu__risk-badge settings-menu__risk-badge--execute">Execute</span>
+                </div>
+                <p className="settings-menu__tool-desc">
+                  Skip the approval prompt for execute_command, but only when the exact command text matches one of
+                  the allowlist entries below (one per line, e.g. "git status") with no shell operators like{' '}
+                  <code>&amp; | &gt; &lt; `</code> anywhere in it — those always require the click regardless of a
+                  match, since they could chain on a second, unlisted command. Anything else still asks. Interactive
+                  chat only; an unattended autonomous run always still asks for these too.
+                </p>
+                <label className="settings-panel__field">
+                  <textarea
+                    value={safeCommandsText}
+                    onChange={(e) => setSafeCommandsText(e.target.value)}
+                    onBlur={() =>
+                      onSafeCommandsChange(
+                        safeCommandsText
+                          .split('\n')
+                          .map((line) => line.trim())
+                          .filter((line) => line.length > 0)
+                      )
+                    }
+                    rows={4}
+                    spellCheck={false}
+                  />
+                </label>
+              </div>
+              <label className="settings-menu__toggle">
+                <input
+                  type="checkbox"
+                  checked={autoApproveSafeCommands}
+                  onChange={onToggleAutoApproveSafeCommands}
+                  aria-label={`${autoApproveSafeCommands ? 'Disable' : 'Enable'} auto-approve for safe commands`}
                 />
                 <span className="settings-menu__toggle-track" aria-hidden="true" />
               </label>

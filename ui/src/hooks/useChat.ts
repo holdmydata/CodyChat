@@ -2,13 +2,15 @@ import { useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { sendNotification, isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification';
-import { streamChat, showModel, OllamaError, type WireMessage } from '../lib/ollama';
+import { streamChat as ollamaStreamChat, showModel as ollamaShowModel, OllamaError, type WireMessage } from '../lib/ollama';
+import { streamChat as openaiStreamChat, showModel as openaiShowModel } from '../lib/openaiCompat';
 import { executeSkill, getToolDefinitions, type ToolDefinition } from '../lib/skills';
 import { getEnvironmentInfo, formatEnvironmentContext } from '../lib/environment';
 import { indexMessage } from '../lib/memory';
-import { riskOf } from '../lib/toolConfig';
+import { riskOf, isSafeCommand } from '../lib/toolConfig';
 import { summarizeArgs, summarizeValue } from '../lib/format';
 import { budgetTokensFor, estimateTokens, trimMessagesToBudget } from '../lib/contextBudget';
+import { defaultAgentHintSettings, resolveAgentHints, type AgentHintSettings } from '../lib/agentHints';
 import type { ActivityStep, Conversation, Message, ToolCall } from '../types';
 export type { ActivityStatus, ActivityStep } from '../types';
 
@@ -47,52 +49,20 @@ async function notifyIfHidden(kind: 'approval' | 'response', arg: ToolCall | str
   }
 }
 
+// 'ollama' talks Ollama's native /api/* wire format; 'openai' talks the
+// OpenAI-compatible format shared by llama-server/LM Studio/vLLM (see
+// lib/openaiCompat.ts) — picks which module's streamChat/showModel this
+// hook calls, everything else about the turn loop is identical either way.
+export type ChatBackend = 'ollama' | 'openai';
+
 const makeId = () => crypto.randomUUID();
 
 // Guards against a runaway model calling tools forever without ever
 // producing a final answer. Hitting this pauses the turn rather than
-// dead-ending it — see pausedMessages/continueTurn below.
-const MAX_TOOL_ITERATIONS = 6;
-
-// Standing behavioral hint, always folded into the system prompt alongside
-// the environment context below. Added after two separate real incidents
-// (an SVG write and a CSS restyle) where the model kept re-attempting the
-// same kind of change speculatively and burned through most of
-// MAX_TOOL_ITERATIONS second-guessing an already-workable result instead of
-// converging — see docs/Architecture/Frontend.md for both cases.
-const AGENT_BEHAVIOR_HINT =
-  'When using tools, work efficiently: make a plan, execute it, and converge on a final answer within a few tool calls. ' +
-  "Avoid re-attempting the same kind of change speculatively or re-litigating an already-successful tool result. If a task is " +
-  'inherently hard to get exactly right in one pass (e.g. hand-drafting detailed visual content like SVG art), do your best ' +
-  'single attempt, briefly note any limitation, and stop rather than looping to perfect it.';
-
-// Real, measured cost this hint targets: a thinking-mode model can fully
-// draft a file's actual content inside its own thinking block, then
-// generate that same content again as the real tool-call argument —
-// thinking tokens and output tokens generate at the same rate, so drafting
-// content twice genuinely costs twice the generation time for identical
-// text. Observed live on the threejs-game-goal autonomous run (2026-08-17):
-// long thinking-panel content visibly drafting file contents before the
-// actual write_file call. Separate from AGENT_BEHAVIOR_HINT's concern
-// (fewer tool-call rounds) — this is about what happens inside a single
-// round.
-const THINKING_EFFICIENCY_HINT =
-  'When you need to write substantial content (code, a file, a long document), use your thinking to plan its structure and ' +
-  "approach only — do not draft the full content there. Generate the actual content once, directly as the tool call's " +
-  'argument, not twice.';
-
-// Targets a real gap in how remember/memory_type actually get used: nothing
-// prompted the model to apply this labeling discipline on its own — it only
-// happened once, live, because the user's own prompt spelled out "learn
-// once, build on learnings" explicitly (docs/Loopx-Reference.md). This makes
-// that the default behavior for research-style reads/fetches instead of
-// something that has to be asked for every time.
-const MEMORY_LABELING_HINT =
-  "When you read_file or web_fetch something specifically to learn from it for later use (not just to answer the current " +
-  "question), don't rely on that tool's own remember flag for it — it stores the raw source verbatim, which makes later " +
-  'search_memory results long and unfocused, especially for a large page. Instead, after reading it, write_file a concise ' +
-  "distilled summary of what's actually useful, with remember: true and memory_type: 'learned_reference'. Save the raw " +
-  'source as-is only when it, itself, is short and worth keeping verbatim.';
+// dead-ending it — see pausedMessages/continueTurn below. Kept high enough
+// that a normal read-heavy turn (several search_memory/read_file calls
+// before composing an answer) doesn't trip it — 6 was hitting constantly.
+const MAX_TOOL_ITERATIONS = 25;
 
 const RETRY_TRIM_MESSAGE = '*(Note: earlier tool results were trimmed to fit the context window.)*\n\n';
 const OVERFLOW_AFTER_RETRY_MESSAGE =
@@ -100,6 +70,8 @@ const OVERFLOW_AFTER_RETRY_MESSAGE =
 
 interface UseChatArgs {
   baseUrl: string;
+  /** Which wire protocol baseUrl speaks — see ChatBackend. Defaults to 'ollama'. */
+  backend?: ChatBackend;
   conversation: Conversation | null;
   onMessagesChange: (id: string, messages: Message[]) => void;
   /** Tool names to strip from the `tools` list sent to Ollama — see Settings → Tools. */
@@ -108,6 +80,14 @@ interface UseChatArgs {
   mcpTools?: ToolDefinition[];
   /** When true, 'read' risk-tier tool calls skip the approval prompt and run immediately — see toolConfig.ts. */
   autoApproveReadOnly?: boolean;
+  /** When true, 'write' risk-tier tool calls also skip the prompt — interactive turns only, see toolConfig.ts. */
+  autoApproveWrites?: boolean;
+  /** When true, execute_command calls matching safeCommands also skip the prompt — interactive turns only. */
+  autoApproveSafeCommands?: boolean;
+  /** The user-editable safe-command allowlist checked by autoApproveSafeCommands — see toolConfig.ts's isSafeCommand. */
+  safeCommands?: string[];
+  /** User-editable standing behavior hints (convergence/thinking-efficiency/memory-labeling) — see lib/agentHints.ts. */
+  agentHints?: AgentHintSettings;
 }
 
 function toWireMessages(
@@ -138,12 +118,19 @@ function isEmptyThinkingOnly(result: { current: Message[]; assistantId: string; 
 
 export function useChat({
   baseUrl,
+  backend = 'ollama',
   conversation,
   onMessagesChange,
   disabledTools,
   mcpTools,
   autoApproveReadOnly,
+  autoApproveWrites,
+  autoApproveSafeCommands,
+  safeCommands,
+  agentHints,
 }: UseChatArgs) {
+  const streamChat = backend === 'openai' ? openaiStreamChat : ollamaStreamChat;
+  const showModel = backend === 'openai' ? openaiShowModel : ollamaShowModel;
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingToolCall, setPendingToolCall] = useState<ToolCall | null>(null);
@@ -182,11 +169,18 @@ export function useChat({
   // auto-swap fix. Fetched lazily per model (via /api/show) and folded back
   // into systemParts so the model's own persona survives regardless.
   const modelSystemCacheRef = useRef<Map<string, string>>(new Map());
-  // Set at the end of every runTurn (both the normal final-answer path and
-  // the max-iterations stop notice), read by runAutonomousTurn right after
+  // Set at the end of every runTurn, read by runAutonomousTurn right after
   // beginTurn resolves — a ref rather than state specifically so reading it
   // immediately after the await can't race React's async state batching.
-  const lastTurnResultRef = useRef<{ content: string; toolNames: string[] } | null>(null);
+  // `completed` is the field useAutonomousLoop.ts actually gates
+  // `todo complete` on — real bug fixed 2026-08-20: this used to be set
+  // (implicitly "success", no such flag existed) on the max-iterations
+  // stop-notice path too, and never set at all (staying null, which
+  // runAutonomousTurn also treated as an empty "success") on the
+  // context-overflow-notice path — so a turn that got cut short by either
+  // safety limit still got reported as done to the task tracker. Only the
+  // genuine final-answer path sets completed: true now.
+  const lastTurnResultRef = useRef<{ content: string; toolNames: string[]; completed: boolean } | null>(null);
 
   const requestApproval = useCallback((call: ToolCall): Promise<boolean> => {
     setPendingToolCall(call);
@@ -274,7 +268,7 @@ export function useChat({
 
       return { current, assistantId: assistantMessage.id, toolCalls };
     },
-    [baseUrl, onMessagesChange, updateActivitySteps]
+    [baseUrl, streamChat, onMessagesChange, updateActivitySteps]
   );
 
   // retryState is a single mutable object created once per top-level turn
@@ -282,7 +276,7 @@ export function useChat({
   // retry allowed for the *whole* turn, not one per tool-call depth level,
   // so a systemic overflow can't effectively double the iteration cap.
   const runTurn = useCallback(
-    async (msgs: Message[], depth: number, retryState: { used: boolean }): Promise<void> => {
+    async (msgs: Message[], depth: number, retryState: { used: boolean }, isAutonomous: boolean): Promise<void> => {
       if (!conversation) return;
 
       if (depth > MAX_TOOL_ITERATIONS) {
@@ -296,6 +290,7 @@ export function useChat({
         lastTurnResultRef.current = {
           content: notice.content,
           toolNames: activityStepsRef.current.map((s) => s.toolName),
+          completed: false,
         };
         onMessagesChange(conversation.id, [...msgs, notice]);
         setPausedMessages(msgs);
@@ -304,9 +299,7 @@ export function useChat({
 
       const modelSystem = modelSystemCacheRef.current.get(conversation.model) ?? '';
       const systemParts = [
-        AGENT_BEHAVIOR_HINT,
-        THINKING_EFFICIENCY_HINT,
-        MEMORY_LABELING_HINT,
+        ...resolveAgentHints(agentHints ?? defaultAgentHintSettings()),
         envContextRef.current,
         modelSystem,
         conversation.systemPrompt,
@@ -418,6 +411,7 @@ export function useChat({
         lastTurnResultRef.current = {
           content: finalMessage?.content ?? '',
           toolNames: activityStepsRef.current.map((s) => s.toolName),
+          completed: true,
         };
         if (finalMessage?.content) {
           notifyIfHidden('response', summarizeValue(finalMessage.content, 150));
@@ -436,12 +430,24 @@ export function useChat({
       }
 
       for (const call of toolCalls as ToolCall[]) {
-        // Auto-approve is scoped to 'read' risk only — write/execute (and
-        // any future unclassified tool, which defaults to 'write' in
-        // riskOf) always require the explicit click regardless of this
-        // setting. Short-circuits before requestApproval is ever called, so
-        // no prompt/pendingToolCall state is set for an auto-approved call.
-        const autoApproved = Boolean(autoApproveReadOnly) && riskOf(call.name) === 'read';
+        // Auto-approve covers 'read' always (if the setting's on), 'write'
+        // only for an interactive turn with autoApproveWrites on, and
+        // execute_command specifically only when it's both an interactive
+        // turn and the exact command text passes isSafeCommand's allowlist
+        // + metacharacter check (toolConfig.ts) — every other 'execute'
+        // call is never auto-approved. isAutonomous forces write/execute
+        // back to a real prompt regardless of either toggle — see
+        // toolConfig.ts's loadAutoApproveWrites comment for why.
+        // Short-circuits before requestApproval is ever called, so no
+        // prompt/pendingToolCall state is set for an auto-approved call.
+        const risk = riskOf(call.name);
+        const autoApproved =
+          (Boolean(autoApproveReadOnly) && risk === 'read') ||
+          (Boolean(autoApproveWrites) && risk === 'write' && !isAutonomous) ||
+          (Boolean(autoApproveSafeCommands) &&
+            !isAutonomous &&
+            call.name === 'execute_command' &&
+            isSafeCommand(String(call.arguments?.command ?? ''), safeCommands ?? []));
         const approved = autoApproved || (await requestApproval(call));
         updateActivitySteps((prev) =>
           prev.map((s) => (s.id === call.id ? { ...s, status: approved ? 'running' : 'denied' } : s))
@@ -473,10 +479,14 @@ export function useChat({
         onMessagesChange(conversation.id, current);
       }
 
-      await runTurn(current, depth + 1, retryState);
+      await runTurn(current, depth + 1, retryState, isAutonomous);
     },
     [
+      agentHints,
       autoApproveReadOnly,
+      autoApproveWrites,
+      autoApproveSafeCommands,
+      safeCommands,
       baseUrl,
       conversation,
       disabledTools,
@@ -492,7 +502,7 @@ export function useChat({
   // abort controller, streaming state, activity log, and the lazy
   // tools/env-context init that used to live only in sendMessage.
   const beginTurn = useCallback(
-    async (msgs: Message[]) => {
+    async (msgs: Message[], isAutonomous = false) => {
       if (!conversation) return;
       setError(null);
       setPausedMessages(null);
@@ -522,7 +532,7 @@ export function useChat({
             modelSystemCacheRef.current.set(conversation.model, '');
           }
         }
-        await runTurn(msgs, 0, { used: false });
+        await runTurn(msgs, 0, { used: false }, isAutonomous);
       } catch (err) {
         if ((err as Error).name !== 'AbortError') {
           setError((err as Error).message);
@@ -532,7 +542,7 @@ export function useChat({
         abortRef.current = null;
       }
     },
-    [baseUrl, conversation, runTurn]
+    [baseUrl, showModel, conversation, runTurn]
   );
 
   const sendMessage = useCallback(
@@ -574,14 +584,18 @@ export function useChat({
   // itself — it's loop bookkeeping ("current task: ..."), not something a
   // future search_memory query should ever want back.
   const runAutonomousTurn = useCallback(
-    async (promptText: string): Promise<{ content: string; toolNames: string[] }> => {
+    async (promptText: string): Promise<{ content: string; toolNames: string[]; completed: boolean }> => {
       if (!conversation) throw new Error('runAutonomousTurn: no active conversation');
       const userMessage: Message = { id: makeId(), role: 'user', content: promptText, createdAt: Date.now() };
       const messages = [...conversation.messages, userMessage];
       onMessagesChange(conversation.id, messages);
       lastTurnResultRef.current = null;
-      await beginTurn(messages);
-      return lastTurnResultRef.current ?? { content: '', toolNames: [] };
+      await beginTurn(messages, true);
+      // The overflow-notice path in runTurn returns without ever setting
+      // lastTurnResultRef (see showOverflowNotice's call sites) — null here
+      // means exactly that: the turn was cut short, not a genuine empty
+      // success, so completed stays false in the fallback too.
+      return lastTurnResultRef.current ?? { content: '', toolNames: [], completed: false };
     },
     [conversation, onMessagesChange, beginTurn]
   );

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { Bird, ListTodo, Maximize2, Minimize2, Network, PanelLeftClose, PanelLeftOpen, Settings, X } from 'lucide-react';
@@ -6,7 +6,7 @@ import './App.css';
 import { Sidebar } from './components/Sidebar';
 import { ChatWindow } from './components/ChatWindow';
 import { DuckPanel } from './components/DuckPanel';
-import { LoopxDigest } from './components/LoopxDigest';
+import { TaskDigest } from './components/TaskDigest';
 import { MemoryGraphView } from './components/MemoryGraphView';
 import { ThemePicker } from './components/ThemePicker';
 import { SettingsMenu } from './components/SettingsMenu';
@@ -26,8 +26,23 @@ import {
 } from './lib/themes';
 import { getPresentationMode, setPresentationMode, type PresentationMode } from './lib/presentation';
 import { getToolDefinitions, type ToolDefinition } from './lib/skills';
-import { loadDisabledTools, saveDisabledTools, loadAutoApproveReadOnly, saveAutoApproveReadOnly } from './lib/toolConfig';
-import { DEFAULT_PARAMS } from './types';
+import {
+  loadDisabledTools,
+  saveDisabledTools,
+  loadAutoApproveReadOnly,
+  saveAutoApproveReadOnly,
+  loadAutoApproveWrites,
+  saveAutoApproveWrites,
+  loadAutoApproveSafeCommands,
+  saveAutoApproveSafeCommands,
+  loadSafeCommands,
+  saveSafeCommands,
+} from './lib/toolConfig';
+import { loadAgentHints, saveAgentHints, type AgentHintSettings } from './lib/agentHints';
+import { generateSubject, summarizeForClear } from './lib/subject';
+import { indexMessage, updateConversationSubject } from './lib/memory';
+import { DEFAULT_PARAMS, type Conversation, type Message } from './types';
+import type { ChatBackend } from './hooks/useChat';
 
 // Only used for the very first conversation ever created, before any model
 // has been picked — left empty rather than a hardcoded model name (was
@@ -37,6 +52,7 @@ import { DEFAULT_PARAMS } from './types';
 // non-empty value, so an empty default degrades cleanly.
 const DEFAULT_MODEL = '';
 const BASE_URL_KEY = 'ollama-ui:base-url';
+const BACKEND_KEY = 'ollama-ui:backend';
 const SIDEBAR_COLLAPSED_KEY = 'ollama-ui:sidebar-collapsed';
 const TITLE_MAX_LENGTH = 48;
 
@@ -125,9 +141,54 @@ function App() {
     });
   }, []);
 
+  const [autoApproveWrites, setAutoApproveWrites] = useState<boolean>(loadAutoApproveWrites);
+  const toggleAutoApproveWrites = useCallback(() => {
+    setAutoApproveWrites((prev) => {
+      const next = !prev;
+      saveAutoApproveWrites(next);
+      return next;
+    });
+  }, []);
+
+  const [autoApproveSafeCommands, setAutoApproveSafeCommands] = useState<boolean>(loadAutoApproveSafeCommands);
+  const toggleAutoApproveSafeCommands = useCallback(() => {
+    setAutoApproveSafeCommands((prev) => {
+      const next = !prev;
+      saveAutoApproveSafeCommands(next);
+      return next;
+    });
+  }, []);
+  const [safeCommands, setSafeCommands] = useState<string[]>(loadSafeCommands);
+  const updateSafeCommands = useCallback((next: string[]) => {
+    setSafeCommands(next);
+    saveSafeCommands(next);
+  }, []);
+
+  const [agentHints, setAgentHints] = useState<AgentHintSettings>(loadAgentHints);
+  const handleAgentHintsChange = useCallback((next: AgentHintSettings) => {
+    setAgentHints(next);
+    saveAgentHints(next);
+  }, []);
+
   const [baseUrl, setBaseUrl] = useState(
     () => localStorage.getItem(BASE_URL_KEY) || 'http://localhost:11434'
   );
+
+  // Which wire protocol baseUrl speaks — Ollama's native API, or the
+  // OpenAI-compatible one shared by llama-server/LM Studio/vLLM (see
+  // lib/openaiCompat.ts). Model management (create/save-as, /api/show's
+  // baked system prompt), embeddings, and the duck/auto-title/clear-context
+  // helper calls in lib/subject.ts and lib/memory.ts stay hard-wired to
+  // Ollama's endpoints regardless of this toggle — llama-server has no
+  // equivalent for the first, and switching the rest over wasn't worth the
+  // scope for what's meant to be a minimal second backend.
+  const [backend, setBackend] = useState<ChatBackend>(
+    () => (localStorage.getItem(BACKEND_KEY) as ChatBackend | null) || 'ollama'
+  );
+  const handleBackendChange = useCallback((next: ChatBackend) => {
+    setBackend(next);
+    localStorage.setItem(BACKEND_KEY, next);
+  }, []);
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     () => localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true'
@@ -218,6 +279,114 @@ function App() {
     setMessages,
   } = useConversations(DEFAULT_MODEL);
 
+  // On-demand only (a Sidebar button click, or the memory graph's bulk
+  // Classify action below), never automatic — reuses whichever model that
+  // conversation is already set to rather than a separate always-loaded
+  // "labeling model", so it costs a real generation call only when
+  // actually asked for. Also backfills the subject into every already-
+  // indexed memory_item for this conversation (memory.ts's
+  // updateConversationSubject) so search_memory's own results can show it
+  // to the model — fire-and-forget, a failure here shouldn't undo the
+  // title update that already succeeded.
+  const handleGenerateSubject = useCallback(
+    async (id: string) => {
+      const conv = conversations.find((c) => c.id === id);
+      if (!conv || !conv.model) return;
+      const subject = await generateSubject(baseUrl, conv.model, conv.messages);
+      updateConversation(id, { title: subject });
+      void updateConversationSubject(id, subject).catch((err: unknown) =>
+        console.error('updateConversationSubject failed (non-fatal):', err)
+      );
+    },
+    [conversations, baseUrl, updateConversation]
+  );
+
+  // "Classify" (MemoryGraphView's control bar) — the bulk version of the
+  // Sidebar button above: generates a subject for every conversation that
+  // still has an unlabeled/mechanical title, one at a time. Sequential, not
+  // Promise.all — this is real local-model generation load, and the
+  // per-conversation button already proved ~1s/call is fine one at a time;
+  // running them concurrently would just have them contend for the same
+  // GPU with no real benefit. A per-conversation failure logs and moves on
+  // rather than aborting the whole batch, same non-fatal posture used
+  // throughout this app's other best-effort background calls.
+  const [classifyProgress, setClassifyProgress] = useState<{ done: number; total: number } | null>(null);
+  const classifyStopRef = useRef(false);
+
+  const isUnlabeledTitle = useCallback((conv: Conversation) => {
+    const first = conv.messages[0]?.content ?? '';
+    return conv.title === 'New chat' || conv.title === deriveTitle(first);
+  }, []);
+
+  const handleClassifyAll = useCallback(async () => {
+    const targets = conversations.filter((c) => c.messages.length > 0 && isUnlabeledTitle(c));
+    if (targets.length === 0 || classifyProgress) return;
+
+    classifyStopRef.current = false;
+    setClassifyProgress({ done: 0, total: targets.length });
+    for (let i = 0; i < targets.length; i++) {
+      if (classifyStopRef.current) break;
+      try {
+        await handleGenerateSubject(targets[i].id);
+      } catch (err) {
+        console.error('Classify: failed on conversation', targets[i].id, err);
+      }
+      setClassifyProgress({ done: i + 1, total: targets.length });
+    }
+    setClassifyProgress(null);
+  }, [conversations, isUnlabeledTitle, handleGenerateSubject, classifyProgress]);
+
+  const handleStopClassify = useCallback(() => {
+    classifyStopRef.current = true;
+  }, []);
+
+  // "Clear context" (ContextMeter.tsx) — replaces history with a short real
+  // recap instead of wiping to nothing, per direct feedback that a hard
+  // wipe felt too destructive. The original messages need no separate
+  // preservation step: useChat.ts already indexes every message into
+  // vector memory as it's sent, regardless of what happens to this
+  // conversation's own message list later, so they're still genuinely
+  // findable via search_memory after this replaces the visible history.
+  // Falls back to a plain wipe if the summarization call itself fails
+  // (e.g. the model's unreachable) — clearing shouldn't become impossible
+  // just because the one-shot summary call had a bad day.
+  const handleClearContext = useCallback(
+    async (id: string) => {
+      const conv = conversations.find((c) => c.id === id);
+      if (!conv || conv.messages.length === 0) return;
+      try {
+        const summary = await summarizeForClear(baseUrl, conv.model, conv.messages);
+        const note: Message = {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          content:
+            `*(Earlier conversation compacted to save context space. Recap: ${summary} ` +
+            'The original messages are still indexed in memory and can be found via search_memory if needed.)*',
+          createdAt: Date.now(),
+        };
+        setMessages(id, [note]);
+        if (!conv.memoryDisabled) {
+          void indexMessage(baseUrl, id, note.id, 'assistant', note.content, note.createdAt);
+        }
+      } catch (err) {
+        console.error('Context compaction failed, falling back to a plain clear:', err);
+        setMessages(id, []);
+      }
+    },
+    [conversations, baseUrl, setMessages]
+  );
+
+  // Feeds the memory graph's detail panel (MemoryGraphView) — memory_items
+  // only carry a bare conversation_id from the Rust backend, which knows
+  // nothing about conversation titles (those live client-side in
+  // localStorage, see useConversations.ts). A plain id->title lookup avoids
+  // passing full Conversation objects (with their message arrays) into a
+  // component that only needs the title.
+  const conversationTitles = useMemo(
+    () => Object.fromEntries(conversations.map((c) => [c.id, c.title])),
+    [conversations]
+  );
+
   const {
     sendMessage,
     stop,
@@ -233,11 +402,16 @@ function App() {
     runAutonomousTurn,
   } = useChat({
     baseUrl,
+    backend,
     conversation: active,
     onMessagesChange: setMessages,
     disabledTools,
     mcpTools: mcp.mcpToolDefs,
     autoApproveReadOnly,
+    autoApproveWrites,
+    autoApproveSafeCommands,
+    safeCommands,
+    agentHints,
   });
 
   const autonomousLoop = useAutonomousLoop({ runAutonomousTurn, baseUrl });
@@ -256,14 +430,14 @@ function App() {
   // pendingAutoStart bridges that gap: recorded when a fresh conversation
   // was needed, consumed by the effect below once `active` actually
   // reflects it.
-  const [pendingAutoStart, setPendingAutoStart] = useState<{ goalId: string; maxTodos: number } | null>(null);
+  const [pendingAutoStart, setPendingAutoStart] = useState<{ projectId: string; maxTasks: number } | null>(null);
   const startAutonomousLoop = useCallback(
-    (goalId: string, maxTodos: number) => {
+    (projectId: string, maxTasks: number) => {
       if (!active) {
         createConversation();
-        setPendingAutoStart({ goalId, maxTodos });
+        setPendingAutoStart({ projectId, maxTasks });
       } else {
-        autonomousLoop.start(goalId, maxTodos);
+        autonomousLoop.start(projectId, maxTasks);
       }
     },
     [active, createConversation, autonomousLoop]
@@ -271,9 +445,9 @@ function App() {
 
   useEffect(() => {
     if (pendingAutoStart && active) {
-      const { goalId, maxTodos } = pendingAutoStart;
+      const { projectId, maxTasks } = pendingAutoStart;
       setPendingAutoStart(null);
-      autonomousLoop.start(goalId, maxTodos);
+      autonomousLoop.start(projectId, maxTasks);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pendingAutoStart, active]);
@@ -380,20 +554,30 @@ function App() {
       </div>
       <div className="app">
         {mainView === 'digest' ? (
-          <LoopxDigest
+          <TaskDigest
             loopState={autonomousLoop.state}
             stopReason={autonomousLoop.stopReason}
             todosCompleted={autonomousLoop.todosCompleted}
-            currentGoalId={autonomousLoop.currentGoalId}
+            currentProjectId={autonomousLoop.currentProjectId}
             onStart={startAutonomousLoop}
             onStop={autonomousLoop.stop}
+            pendingToolCall={pendingToolCall}
+            onApproveToolCall={approveToolCall}
+            onDenyToolCall={denyToolCall}
           />
         ) : mainView === 'memory-graph' ? (
-          <MemoryGraphView />
+          <MemoryGraphView
+            conversationTitles={conversationTitles}
+            onClassifyAll={handleClassifyAll}
+            classifyProgress={classifyProgress}
+            onStopClassify={handleStopClassify}
+          />
         ) : mainView === 'settings' ? (
           <SettingsMenu
             baseUrl={baseUrl}
             onBaseUrlChange={handleBaseUrlChange}
+            backend={backend}
+            onBackendChange={handleBackendChange}
             appVersion={appInfo?.version}
             tauriVersion={appInfo?.tauriVersion}
             themeId={themeId}
@@ -405,6 +589,12 @@ function App() {
             onToggleTool={toggleTool}
             autoApproveReadOnly={autoApproveReadOnly}
             onToggleAutoApproveReadOnly={toggleAutoApproveReadOnly}
+            autoApproveWrites={autoApproveWrites}
+            onToggleAutoApproveWrites={toggleAutoApproveWrites}
+            autoApproveSafeCommands={autoApproveSafeCommands}
+            onToggleAutoApproveSafeCommands={toggleAutoApproveSafeCommands}
+            safeCommands={safeCommands}
+            onSafeCommandsChange={updateSafeCommands}
             mcpServers={mcp.servers}
             mcpStatusById={mcp.statusById}
             onAddMcpServer={mcp.addServer}
@@ -428,6 +618,8 @@ function App() {
             }}
             fontOverride={fontOverride ?? ''}
             onFontOverrideChange={handleFontOverrideChange}
+            agentHints={agentHints}
+            onAgentHintsChange={handleAgentHintsChange}
           />
         ) : (
           <>
@@ -439,12 +631,14 @@ function App() {
                 onNew={() => createConversation()}
                 onDelete={deleteConversation}
                 onRename={(id, title) => updateConversation(id, { title })}
+                onGenerateSubject={handleGenerateSubject}
               />
             )}
             {active ? (
               <ChatWindow
                 conversation={active}
                 baseUrl={baseUrl}
+                backend={backend}
                 onModelChange={(model) => updateConversation(active.id, { model })}
                 isStreaming={isStreaming}
                 error={error}
@@ -463,6 +657,7 @@ function App() {
                 loopTodosCompleted={autonomousLoop.todosCompleted}
                 onStopLoop={autonomousLoop.stop}
                 presentationMode={presentationMode}
+                onClearContext={() => handleClearContext(active.id)}
               />
             ) : (
               <div className="app__empty">

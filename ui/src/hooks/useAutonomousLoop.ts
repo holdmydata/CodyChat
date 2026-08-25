@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState } from 'react';
-import { completeTodo, getLoopxDigest, refreshLoopxState, spendSlot } from '../lib/loopx';
+import { completeTask, getTaskDigest } from '../lib/tasks';
 import { indexDocument } from '../lib/memory';
 
 export type LoopState = 'idle' | 'fetching' | 'running' | 'reporting' | 'stopped';
@@ -14,31 +14,48 @@ interface UseAutonomousLoopArgs {
   // calls (see toolConfig.ts's autoApproveReadOnly) — any write/execute
   // call is the point a person has to be there, by construction, not by a
   // new check bolted on top.
-  runAutonomousTurn: (promptText: string) => Promise<{ content: string; toolNames: string[] }>;
-  /** For indexing evidence into vector memory after each todo — see the completeTodo block below. */
+  runAutonomousTurn: (promptText: string) => Promise<{ content: string; toolNames: string[]; completed: boolean }>;
+  /** For indexing evidence into vector memory after each task — see the completeTask block below. */
   baseUrl: string;
 }
 
-// Real bug hit on the first live run: a passive "Current task: {text}" prompt
-// got answered as a conversational question ("great question about loopx,
-// let me give you a rundown...") instead of actually executing the named
-// command — the model never called execute_command at all. Same failure
-// class this project already hit once before (2026-08-14, a generic
-// instruction read as "explain this" instead of "do this") — fixed the
-// same way: a much more imperative framing that explicitly rules out
-// discussing/explaining and calls out execute_command by name when the todo
-// names a literal command to run. Note this doesn't make execute_command
-// itself silent — it's still 'execute' risk tier (toolConfig.ts), so it
-// still stops for a real approval click regardless of this prompt; only
-// read-only calls proceed unattended.
-function buildTodoPrompt(todoText: string): string {
+// Real bug hit on the first live run (back when this was loopx-backed): a
+// passive "Current task: {text}" prompt got answered as a conversational
+// question ("great question, let me give you a rundown...") instead of
+// actually executing the named command — the model never called
+// execute_command at all. Same failure class this project already hit once
+// before (2026-08-14, a generic instruction read as "explain this" instead
+// of "do this") — fixed the same way: a much more imperative framing that
+// explicitly rules out discussing/explaining and calls out execute_command
+// by name when the task names a literal command to run. Note this doesn't
+// make execute_command itself silent — it's still 'execute' risk tier
+// (toolConfig.ts), so it still stops for a real approval click regardless
+// of this prompt; only read-only calls proceed unattended.
+// Real bug found 2026-08-20, from an actual live run against a non-UI
+// project (cffb): the standing environment context injected into every turn
+// (useChat.ts's envContextRef) reports this *app's* own project_root —
+// correct for normal chat, but every tracked project isn't necessarily
+// about this app at all (see tasks.rs's TRACKED_PROJECTS: kanban-reader,
+// threejs-game, and cffb all live in their own separate directories). With
+// no project-specific grounding, the model had nothing but the app's own
+// folder to go on, so it read/gathered context from there instead of the
+// actual target project — exactly what was observed live. projectDir comes
+// straight from the same TRACKED_PROJECTS-backed digest (TaskDigest's
+// project_dir field), so each task explicitly states where its real files
+// live, overriding the app's own project_root for the scope of this one
+// task rather than changing what every other conversation is grounded to.
+function buildTaskPrompt(taskText: string, projectDir: string): string {
   return (
-    'You are operating autonomously against this project\'s own todo list — no one is watching this ' +
+    'You are operating autonomously against this project\'s own task list — no one is watching this ' +
     'conversation right now. Actually perform the task below using your available tools; do not describe, ' +
     'explain, or discuss it instead of doing it. If the task names a specific command to run (e.g. "Run X"), ' +
     'execute that literal command for real via execute_command and report its actual output — a description ' +
     'of what the command or tool generally does is not a substitute for running it.\n\n' +
-    `Task: ${todoText}`
+    `This task's project lives at: ${projectDir} — even if your standing environment context names a ` +
+    "different default folder, that's this app's own codebase, not necessarily this task's. Start by listing " +
+    "or reading files under this project's own path above, not the app's default folder, unless the task " +
+    'explicitly says otherwise.\n\n' +
+    `Task: ${taskText}`
   );
 }
 
@@ -49,19 +66,23 @@ function buildEvidence(result: { content: string; toolNames: string[] }): string
 }
 
 // The loop's own governance, separate from and on top of the per-turn tool-
-// approval gate above: a hard max-todos step cap, always-on stop-on-error,
-// stop when loopx itself says nothing is left to do, and a no-progress
-// check (the same todo selected twice in a row means the previous
-// `todo complete` didn't actually clear it — looping on that forever would
-// be exactly the runaway-loop failure mode this exists to prevent). All
-// four enforced in this function's own control flow, not left to the
-// model's judgment — matches the "circuit breakers live outside the
-// agent's own reasoning" principle this was designed against.
+// approval gate above: a hard max-tasks step cap, always-on stop-on-error,
+// stop when the tracked project reports nothing eligible to run, and a
+// no-progress check (the same task selected twice in a row means the
+// previous complete_task call didn't actually clear it — looping on that
+// forever would be exactly the runaway-loop failure mode this exists to
+// prevent). All four enforced in this function's own control flow, not left
+// to the model's judgment — matches the "circuit breakers live outside the
+// agent's own reasoning" principle this was designed against. Previously
+// this same governance sat on top of loopx; it's unchanged by the 2026-08-22
+// move off loopx onto a plain per-project AGENT_TASKS.md file (see
+// tasks.rs) — none of it ever depended on loopx's own quota/spend-slot
+// machinery, which this app never actually consumed.
 export function useAutonomousLoop({ runAutonomousTurn, baseUrl }: UseAutonomousLoopArgs) {
   const [state, setState] = useState<LoopState>('idle');
   const [stopReason, setStopReason] = useState<string | null>(null);
   const [todosCompleted, setTodosCompleted] = useState(0);
-  const [currentGoalId, setCurrentGoalId] = useState<string | null>(null);
+  const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
   const stopRequestedRef = useRef(false);
 
   const stop = useCallback(() => {
@@ -69,15 +90,15 @@ export function useAutonomousLoop({ runAutonomousTurn, baseUrl }: UseAutonomousL
   }, []);
 
   const start = useCallback(
-    async (goalId: string, maxTodos: number) => {
+    async (projectId: string, maxTasks: number) => {
       stopRequestedRef.current = false;
-      setCurrentGoalId(goalId);
+      setCurrentProjectId(projectId);
       setTodosCompleted(0);
       setStopReason(null);
 
-      let lastTodoId: string | null = null;
+      let lastTaskText: string | null = null;
 
-      for (let i = 0; i < maxTodos; i++) {
+      for (let i = 0; i < maxTasks; i++) {
         if (stopRequestedRef.current) {
           setState('stopped');
           setStopReason('Stopped by user.');
@@ -87,37 +108,37 @@ export function useAutonomousLoop({ runAutonomousTurn, baseUrl }: UseAutonomousL
         setState('fetching');
         let digest;
         try {
-          const all = await getLoopxDigest();
-          digest = all.find((g) => g.goal_id === goalId);
+          const all = await getTaskDigest();
+          digest = all.find((p) => p.project_id === projectId);
         } catch (err) {
           setState('stopped');
-          setStopReason(`Failed to fetch loopx state: ${String(err)}`);
+          setStopReason(`Failed to fetch task state: ${String(err)}`);
           return;
         }
 
         if (!digest || digest.error) {
           setState('stopped');
-          setStopReason(digest?.error ?? `Unknown goal: ${goalId}`);
+          setStopReason(digest?.error ?? `Unknown project: ${projectId}`);
           return;
         }
-        if (!digest.should_run || !digest.next_todo) {
+        if (!digest.should_run || !digest.next_task) {
           setState('stopped');
-          setStopReason('No more todos — loopx reports nothing eligible to run.');
+          setStopReason('No more tasks — nothing eligible to run in AGENT_TASKS.md\'s Ready lane.');
           return;
         }
 
-        const todo = digest.next_todo;
-        if (todo.todo_id === lastTodoId) {
+        const task = digest.next_task;
+        if (task.text === lastTaskText) {
           setState('stopped');
-          setStopReason(`No progress: "${todo.text}" was selected again after being reported complete.`);
+          setStopReason(`No progress: "${task.text}" was selected again after being reported complete.`);
           return;
         }
-        lastTodoId = todo.todo_id;
+        lastTaskText = task.text;
 
         setState('running');
-        let result: { content: string; toolNames: string[] };
+        let result: { content: string; toolNames: string[]; completed: boolean };
         try {
-          result = await runAutonomousTurn(buildTodoPrompt(todo.text));
+          result = await runAutonomousTurn(buildTaskPrompt(task.text, digest.project_dir));
         } catch (err) {
           setState('stopped');
           setStopReason(`Turn failed: ${String(err)}`);
@@ -130,25 +151,41 @@ export function useAutonomousLoop({ runAutonomousTurn, baseUrl }: UseAutonomousL
           return;
         }
 
+        // Real bug fixed 2026-08-20 (back when this reported to loopx): this
+        // used to report every turn as done unconditionally, including ones
+        // that got cut short by the tool-call safety cap or a context-
+        // overflow retry failure — the tracker would then believe a task was
+        // finished when it genuinely wasn't, with no way to tell from its
+        // own state that anything had gone wrong. Stopping here instead (not
+        // skipping to the next task) leaves this one still selectable on the
+        // next run, and the reason is specific enough to act on rather than
+        // a generic failure.
+        if (!result.completed) {
+          setState('stopped');
+          setStopReason(
+            `"${task.text}" didn't reach a real final answer this turn (hit the tool-call safety cap or a ` +
+              "context-overflow retry that also failed) — stopped without marking it complete, so it's still " +
+              'available to pick up again. Consider a smaller/more specific task, or raising context length in Settings.'
+          );
+          return;
+        }
+
         setState('reporting');
         try {
           const evidence = buildEvidence(result);
-          await completeTodo(goalId, todo.todo_id, evidence);
-          await refreshLoopxState(goalId);
-          await spendSlot(goalId, 1);
+          await completeTask(projectId, task.text, evidence);
           // Indexed as the agent's own growing experience log — distinct in
-          // purpose from docs/MEMORY.md (the human/Claude-Code engineering
-          // log): a future autonomous turn can search_memory this instead
-          // of re-deriving context from scratch, which is exactly what cost
-          // this session real context budget (a turn had to read the full,
-          // huge MEMORY.md just to learn how loopx works). Fire-and-forget,
-          // same non-fatal posture as indexDocument's own internal
+          // purpose from local-docs/MEMORY.md (the human/Claude-Code
+          // engineering log): a future autonomous turn can search_memory
+          // this instead of re-deriving context from scratch. Fire-and-
+          // forget, same non-fatal posture as indexDocument's own internal
           // try/catch — a failure here shouldn't affect the loop, which has
-          // already succeeded at reporting real state to loopx above.
-          void indexDocument(baseUrl, 'agent_evidence', `${goalId}:${todo.todo_id}`, evidence);
+          // already succeeded at writing real state back to AGENT_TASKS.md
+          // above.
+          void indexDocument(baseUrl, 'agent_evidence', `${projectId}:${task.text.slice(0, 60)}`, evidence);
         } catch (err) {
           setState('stopped');
-          setStopReason(`Failed to report evidence back to loopx: ${String(err)}`);
+          setStopReason(`Failed to write task completion back to AGENT_TASKS.md: ${String(err)}`);
           return;
         }
 
@@ -156,10 +193,10 @@ export function useAutonomousLoop({ runAutonomousTurn, baseUrl }: UseAutonomousL
       }
 
       setState('stopped');
-      setStopReason(`Stopped: reached the max-todos limit (${maxTodos}).`);
+      setStopReason(`Stopped: reached the max-tasks limit (${maxTasks}).`);
     },
     [runAutonomousTurn, baseUrl]
   );
 
-  return { state, stopReason, todosCompleted, currentGoalId, start, stop };
+  return { state, stopReason, todosCompleted, currentProjectId, start, stop };
 }

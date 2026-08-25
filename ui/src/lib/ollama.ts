@@ -234,6 +234,27 @@ export async function embedText(baseUrl: string, model: string, input: string): 
   return vec;
 }
 
+// One-shot, non-streaming completion for short utility generations (e.g.
+// the conversation-subject labeler, subject.ts) — not worth routing through
+// the full streamChat/tool-loop machinery for a single plain text answer.
+// think:false confirmed live via curl against this project's real Ollama
+// instance (2026-08-20): a thinking-capable model (qwen3.5:9b) returned an
+// immediate direct answer with no thinking field at all, rather than
+// spending a reasoning pass on what's meant to be a cheap, quick label.
+export async function chatOnce(baseUrl: string, model: string, messages: WireMessage[]): Promise<string> {
+  const res = await fetch(`${baseUrl}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ model, messages, stream: false, think: false }),
+  });
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => '');
+    throw new OllamaError(`Chat request failed: ${res.status} ${res.statusText}${bodyText ? ` — ${bodyText}` : ''}`);
+  }
+  const data = await res.json();
+  return typeof data.message?.content === 'string' ? data.message.content : '';
+}
+
 // Streams a chat completion, invoking onToken for each content delta.
 // Resolves with the full assembled response text once the stream ends.
 export async function streamChat({

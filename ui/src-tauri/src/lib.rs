@@ -1,8 +1,8 @@
 mod commands;
-mod loopx;
 mod mcp;
 mod memory;
 mod skills;
+mod tasks;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -443,13 +443,12 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::get_app_info,
-            commands::get_loopx_digest,
             commands::get_environment_info,
             commands::read_theme_pack,
             commands::get_system_resources,
-            loopx::loopx_complete_todo,
-            loopx::loopx_refresh_state,
-            loopx::loopx_spend_slot,
+            tasks::get_task_digest,
+            tasks::list_tasks,
+            tasks::complete_task,
             skills::read_file,
             skills::write_file,
             skills::edit_file,
@@ -462,6 +461,7 @@ pub fn run() {
             mcp::mcp_disconnect,
             mcp::mcp_call_tool,
             memory::index_memory_item,
+            memory::update_memory_conversation_subject,
             memory::search_memory,
             memory::get_memory_graph,
             memory::get_memory_item,

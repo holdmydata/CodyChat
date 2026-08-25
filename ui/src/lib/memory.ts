@@ -16,6 +16,7 @@ interface RawMemoryMatch {
   message_id: string;
   source_path: string;
   content: string;
+  conversation_subject: string;
   distance: number;
 }
 
@@ -27,6 +28,8 @@ export interface MemoryMatch {
   messageId: string;
   sourcePath: string;
   content: string;
+  /** Empty until someone generates a subject for this conversation (Sidebar's sparkle button, or the memory graph's Classify action) — see memory.rs's update_memory_conversation_subject. */
+  conversationSubject: string;
   distance: number;
 }
 
@@ -105,6 +108,18 @@ export async function searchMemory(
     messageId: m.message_id,
     sourcePath: m.source_path,
     content: m.content,
+    conversationSubject: m.conversation_subject,
     distance: m.distance,
   }));
+}
+
+// Backfills conversation_subject on every already-indexed memory_item for
+// this conversation — called after generateSubject() produces a real title
+// (both the Sidebar's per-conversation button and the memory graph's bulk
+// Classify action share this one path), so search_memory's own results can
+// show which conversation a hit came from without needing a live
+// conversations list (the Rust backend has none — see subject.ts).
+// Fire-and-forget by callers, same non-fatal posture as indexItem.
+export async function updateConversationSubject(conversationId: string, subject: string): Promise<void> {
+  await invoke('update_memory_conversation_subject', { conversation_id: conversationId, subject });
 }

@@ -1,9 +1,10 @@
 import { useMemo, useRef, useState, useEffect } from 'react';
 import type { Conversation, ToolCall } from '../types';
-import type { ActivityStep } from '../hooks/useChat';
+import type { ActivityStep, ChatBackend } from '../hooks/useChat';
 import type { LoopState } from '../hooks/useAutonomousLoop';
 import type { PresentationMode } from '../lib/presentation';
 import { ModelPicker } from './ModelPicker';
+import { ContextMeter } from './ContextMeter';
 import { MessageBubble, buildToolResultIndex } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { ToolApprovalPrompt } from './ToolApprovalPrompt';
@@ -13,6 +14,7 @@ import { ChatHistory3D } from './ChatHistory3D';
 interface ChatWindowProps {
   conversation: Conversation;
   baseUrl: string;
+  backend?: ChatBackend;
   onModelChange: (model: string) => void;
   isStreaming: boolean;
   error: string | null;
@@ -29,18 +31,21 @@ interface ChatWindowProps {
   compact?: boolean;
   /** Bumped by Settings → General's "Save as custom model" so the picker refreshes without needing to be the one that triggered the save. */
   modelListRefreshKey?: number;
-  /** Autonomous loop status (see useAutonomousLoop.ts) — shown as a band above the input, same treatment as chat-window__continue, since a run happening here is just a normal turn started from loopx state instead of typed input. */
+  /** Autonomous loop status (see useAutonomousLoop.ts) — shown as a band above the input, same treatment as chat-window__continue, since a run happening here is just a normal turn started from AGENT_TASKS.md state instead of typed input. */
   loopState?: LoopState;
   loopStopReason?: string | null;
   loopTodosCompleted?: number;
   onStopLoop?: () => void;
   /** Swaps the message-history region only — header, approval prompts, and the input box stay unconditionally 2D regardless of mode. */
   presentationMode: PresentationMode;
+  /** Compacts this conversation's message history in place (keeps model/settings/title) — see ContextMeter. */
+  onClearContext: () => Promise<void>;
 }
 
 export function ChatWindow({
   conversation,
   baseUrl,
+  backend,
   onModelChange,
   isStreaming,
   error,
@@ -59,6 +64,7 @@ export function ChatWindow({
   loopTodosCompleted = 0,
   onStopLoop,
   presentationMode,
+  onClearContext,
 }: ChatWindowProps) {
   // Pairs each tool call with its result (a separate 'tool'-role message,
   // matched by toolCallId) so ToolCallChip can show both together in one
@@ -159,16 +165,29 @@ export function ChatWindow({
 
   return (
     <div className="chat-window">
-      {!compact && (
-        <header className="chat-window__header">
+      {/* The model picker specifically doesn't belong in the compact
+          widget (no room, not the point of that surface — established
+          2026-08-15), but the context meter is the opposite case: it's
+          most useful during exactly the kind of quick day-to-day widget
+          use this app is built around, so it stays visible in both modes
+          rather than being hidden along with the picker. */}
+      <header className={`chat-window__header${compact ? ' chat-window__header--compact' : ''}`}>
+        {!compact && (
           <ModelPicker
             baseUrl={baseUrl}
+            backend={backend}
             value={conversation.model}
             onChange={onModelChange}
             refreshKey={modelListRefreshKey}
           />
-        </header>
-      )}
+        )}
+        <ContextMeter
+          conversationId={conversation.id}
+          messages={conversation.messages}
+          numCtx={conversation.params.numCtx}
+          onClear={onClearContext}
+        />
+      </header>
 
       {presentationMode === 'spatial' ? (
         <ChatHistory3D conversation={conversation} isStreaming={isStreaming} error={error} />
@@ -209,9 +228,9 @@ export function ChatWindow({
       {loopState !== 'idle' && (
         <div className={`chat-window__continue chat-window__loop-status chat-window__loop-status--${loopState}`}>
           <span>
-            {loopState === 'fetching' && 'Autonomous run: checking loopx for the next todo…'}
+            {loopState === 'fetching' && 'Autonomous run: checking AGENT_TASKS.md for the next task…'}
             {loopState === 'running' && `Autonomous run: working (${loopTodosCompleted} completed so far)…`}
-            {loopState === 'reporting' && 'Autonomous run: reporting evidence back to loopx…'}
+            {loopState === 'reporting' && 'Autonomous run: writing evidence back to AGENT_TASKS.md…'}
             {loopState === 'stopped' && `Autonomous run stopped: ${loopStopReason ?? 'unknown reason'}`}
           </span>
           {loopState !== 'stopped' && onStopLoop && (

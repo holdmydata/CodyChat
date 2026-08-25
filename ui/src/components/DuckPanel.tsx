@@ -187,6 +187,7 @@ export function DuckPanel({ open, onClose, baseUrl, defaultModel }: DuckPanelPro
           onContinue={continueTurn}
           presentationMode="flat"
           compact
+          onClearContext={async () => setMessages(conversation.id, [])}
         />
       )}
     </div>

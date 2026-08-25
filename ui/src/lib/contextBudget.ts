@@ -43,7 +43,11 @@ const KEEP_FULL_RECENT_TOOL_RESULTS = 2;
 // payload requires. Tool-call arguments matter too: a `write_file` call
 // embeds the entire file content being written as an argument, which can
 // be just as large as a `read_file` result.
-function messageTokens(m: Message): number {
+// Exported for the context-usage indicator (ContextMeter.tsx) — reuses the
+// exact same accounting the trimmer itself budgets against (content + any
+// tool-call arguments), rather than a separate, potentially-inconsistent
+// estimate for what the UI displays vs. what actually gets sent.
+export function messageTokens(m: Message): number {
   let tokens = estimateTokens(m.content);
   if (m.toolCalls?.length) {
     for (const call of m.toolCalls) {
