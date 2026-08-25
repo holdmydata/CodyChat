@@ -77,6 +77,9 @@ interface SettingsMenuProps {
   /** Application Insights connection + fallback-user config for governance telemetry — see lib/governance.ts. Backend-agnostic (shown regardless of which backend is active) since usage on any of them is part of the same governance picture. */
   governanceConfig: GovernanceConfig;
   onGovernanceConfigChange: (config: GovernanceConfig) => void;
+  /** Off by default — the companion duck is a whimsical, Ollama-only side feature, hidden until explicitly turned on (e.g. before a corporate/Azure-routed rollout). See App.tsx's DUCK_ENABLED_KEY comment. */
+  duckEnabled: boolean;
+  onDuckEnabledChange: (enabled: boolean) => void;
 }
 
 // Curated, not free-typed — real bug this replaces: the free-text input
@@ -172,6 +175,8 @@ export function SettingsMenu({
   onAzureRouterConfigReload,
   governanceConfig,
   onGovernanceConfigChange,
+  duckEnabled,
+  onDuckEnabledChange,
 }: SettingsMenuProps) {
   const [tab, setTab] = useState<Tab>('general');
   // Local text buffer so typing doesn't fight the parent's parsed array on
@@ -329,6 +334,28 @@ export function SettingsMenu({
                 placeholder="you@example.com"
               />
             </label>
+
+            <h4 className="settings-menu__subheading">Companion duck</h4>
+            <div className="settings-menu__tool-row">
+              <div className="settings-menu__tool-info">
+                <div className="settings-menu__tool-name">
+                  <span>Show companion duck</span>
+                </div>
+                <p className="settings-menu__tool-desc">
+                  A separate, persistent side conversation with a small pose-reactive companion — always Ollama-only
+                  regardless of the backend selected above. Off by default; turn on for personal/local use.
+                </p>
+              </div>
+              <label className="settings-menu__toggle">
+                <input
+                  type="checkbox"
+                  checked={duckEnabled}
+                  onChange={(e) => onDuckEnabledChange(e.target.checked)}
+                  aria-label={duckEnabled ? 'Hide companion duck' : 'Show companion duck'}
+                />
+                <span className="settings-menu__toggle-track" aria-hidden="true" />
+              </label>
+            </div>
 
             <h4 className="settings-menu__subheading">Agent behavior</h4>
             <p className="settings-menu__hint">

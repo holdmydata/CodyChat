@@ -56,6 +56,13 @@ const DEFAULT_MODEL = '';
 const BASE_URL_KEY = 'ollama-ui:base-url';
 const BACKEND_KEY = 'ollama-ui:backend';
 const SIDEBAR_COLLAPSED_KEY = 'ollama-ui:sidebar-collapsed';
+// Off by default — the companion duck is a whimsical, Ollama-only
+// (DuckPanel/useDuckConversation never take a `backend` prop, so it always
+// talks to Ollama regardless of the app's active backend) side feature, not
+// something that belongs visible-by-default in a corporate/Azure-routed
+// deployment. Opt-in via Settings for anyone who wants it (see 2026-08-25 in
+// local-docs/MEMORY.md for the full reasoning).
+const DUCK_ENABLED_KEY = 'ollama-ui:duck-enabled';
 const TITLE_MAX_LENGTH = 48;
 
 function deriveTitle(firstMessage: string): string {
@@ -271,6 +278,14 @@ function App() {
   // themeId), since there's no strong reason it should default open on next launch.
   const [isDuckOpen, setIsDuckOpen] = useState(false);
   const toggleDuck = useCallback(() => setIsDuckOpen((v) => !v), []);
+  const [duckEnabled, setDuckEnabled] = useState(() => localStorage.getItem(DUCK_ENABLED_KEY) === 'true');
+  const handleDuckEnabledChange = useCallback((enabled: boolean) => {
+    setDuckEnabled(enabled);
+    localStorage.setItem(DUCK_ENABLED_KEY, String(enabled));
+    // Closing along with disabling — leaving it "enabled but hidden" would
+    // strand the panel open with no titlebar button left to close it.
+    if (!enabled) setIsDuckOpen(false);
+  }, []);
 
   const handleBaseUrlChange = useCallback((url: string) => {
     setBaseUrl(url);
@@ -531,15 +546,17 @@ function App() {
         >
           <Settings size={16} />
         </button>
-        <button
-          type="button"
-          className={`titlebar__duck-toggle${isDuckOpen ? ' titlebar__icon-btn--active' : ''}`}
-          onClick={toggleDuck}
-          aria-label={isDuckOpen ? 'Close companion duck' : 'Open companion duck'}
-          title={isDuckOpen ? 'Close companion duck' : 'Open companion duck'}
-        >
-          <Bird size={16} />
-        </button>
+        {duckEnabled && (
+          <button
+            type="button"
+            className={`titlebar__duck-toggle${isDuckOpen ? ' titlebar__icon-btn--active' : ''}`}
+            onClick={toggleDuck}
+            aria-label={isDuckOpen ? 'Close companion duck' : 'Open companion duck'}
+            title={isDuckOpen ? 'Close companion duck' : 'Open companion duck'}
+          >
+            <Bird size={16} />
+          </button>
+        )}
         {appInfo && (
           <span className="titlebar__info">
             CodyChat - v{appInfo.version} · Tauri {appInfo.tauriVersion}
@@ -642,6 +659,8 @@ function App() {
             onAzureRouterConfigReload={invalidateRouterConfigCache}
             governanceConfig={governanceConfig}
             onGovernanceConfigChange={handleGovernanceConfigChange}
+            duckEnabled={duckEnabled}
+            onDuckEnabledChange={handleDuckEnabledChange}
           />
         ) : (
           <>
@@ -691,7 +710,9 @@ function App() {
           </>
         )}
       </div>
-      <DuckPanel open={isDuckOpen} onClose={() => setIsDuckOpen(false)} baseUrl={baseUrl} defaultModel={active?.model ?? ''} />
+      {duckEnabled && (
+        <DuckPanel open={isDuckOpen} onClose={() => setIsDuckOpen(false)} baseUrl={baseUrl} defaultModel={active?.model ?? ''} />
+      )}
     </div>
   );
 }
