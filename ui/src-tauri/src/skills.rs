@@ -682,6 +682,21 @@ pub fn get_tool_definitions() -> serde_json::Value {
                     "required": ["query"]
                 }
             }
+        },
+        {
+            "type": "function",
+            "function": {
+                "name": "ask_user_choice",
+                "description": "Present the user with a short question and a fixed set of options to pick from, rendered as clickable buttons, instead of asking them to type a free-form reply. Use this when there's a small, well-defined set of choices (e.g. 'which environment: staging or production?', 'proceed with plan A or plan B?') rather than an open-ended question — not for yes/no confirmations on a risky action, which already get a real approval prompt on their own. The user's clicked option is returned as this call's result; wait for it before continuing.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "question": {"type": "string", "description": "The question to show the user, in plain language"},
+                        "options": {"type": "array", "items": {"type": "string"}, "description": "2 to 6 short, distinct option labels for the user to pick from"}
+                    },
+                    "required": ["question", "options"]
+                }
+            }
         }
     ])
 }

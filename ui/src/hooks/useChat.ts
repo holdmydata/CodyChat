@@ -165,7 +165,10 @@ export function useChat({
     setActivitySteps(activityStepsRef.current);
   }, []);
   const abortRef = useRef<AbortController | null>(null);
-  const approvalResolverRef = useRef<((approved: boolean) => void) | null>(null);
+  // false = denied, true = approved (run executeSkill normally), a string =
+  // a direct result (used by ask_user_choice — the user's clicked option
+  // *is* the tool result, there's nothing further to execute).
+  const approvalResolverRef = useRef<((resolution: boolean | string) => void) | null>(null);
   // Full, unfiltered schema list — fetched once, lazily (schemas rarely
   // change within a session). Filtered by disabledTools per-turn below so
   // toggling a tool off in Settings takes effect on the very next message,
@@ -198,20 +201,23 @@ export function useChat({
   // genuine final-answer path sets completed: true now.
   const lastTurnResultRef = useRef<{ content: string; toolNames: string[]; completed: boolean } | null>(null);
 
-  const requestApproval = useCallback((call: ToolCall): Promise<boolean> => {
+  const requestApproval = useCallback((call: ToolCall): Promise<boolean | string> => {
     setPendingToolCall(call);
     notifyIfHidden('approval', call);
     return new Promise((resolve) => {
-      approvalResolverRef.current = (approved) => {
+      approvalResolverRef.current = (resolution) => {
         setPendingToolCall(null);
         approvalResolverRef.current = null;
-        resolve(approved);
+        resolve(resolution);
       };
     });
   }, []);
 
   const approveToolCall = useCallback(() => approvalResolverRef.current?.(true), []);
   const denyToolCall = useCallback(() => approvalResolverRef.current?.(false), []);
+  // ask_user_choice's UI (ChoicePrompt) calls this with the clicked option
+  // text instead of approveToolCall/denyToolCall — see the tool loop below.
+  const selectToolChoice = useCallback((value: string) => approvalResolverRef.current?.(value), []);
 
   const stop = useCallback(() => {
     abortRef.current?.abort();
@@ -480,20 +486,33 @@ export function useChat({
         // toolConfig.ts's loadAutoApproveWrites comment for why.
         // Short-circuits before requestApproval is ever called, so no
         // prompt/pendingToolCall state is set for an auto-approved call.
+        // ask_user_choice is never auto-approved regardless of any toggle —
+        // the prompt IS the interaction (there's no "safe to skip" version
+        // of a question that only the user can actually answer).
         const risk = riskOf(call.name);
+        const isChoice = call.name === 'ask_user_choice';
         const autoApproved =
-          (Boolean(autoApproveReadOnly) && risk === 'read') ||
-          (Boolean(autoApproveWrites) && risk === 'write' && !isAutonomous) ||
-          (Boolean(autoApproveSafeCommands) &&
-            !isAutonomous &&
-            call.name === 'execute_command' &&
-            isSafeCommand(String(call.arguments?.command ?? ''), safeCommands ?? []));
-        const approved = autoApproved || (await requestApproval(call));
+          !isChoice &&
+          ((Boolean(autoApproveReadOnly) && risk === 'read') ||
+            (Boolean(autoApproveWrites) && risk === 'write' && !isAutonomous) ||
+            (Boolean(autoApproveSafeCommands) &&
+              !isAutonomous &&
+              call.name === 'execute_command' &&
+              isSafeCommand(String(call.arguments?.command ?? ''), safeCommands ?? [])));
+        const resolution = autoApproved || (await requestApproval(call));
+        const approved = resolution !== false;
         updateActivitySteps((prev) =>
           prev.map((s) => (s.id === call.id ? { ...s, status: approved ? 'running' : 'denied' } : s))
         );
         let result: string;
-        if (approved) {
+        if (typeof resolution === 'string') {
+          // ChoicePrompt resolved with the clicked option text directly —
+          // that *is* the result, nothing to execute.
+          result = resolution;
+          updateActivitySteps((prev) =>
+            prev.map((s) => (s.id === call.id ? { ...s, status: 'done', resultSummary: summarizeValue(result) } : s))
+          );
+        } else if (approved) {
           try {
             result = await executeSkill(call, { baseUrl, conversationId: conversation.id });
             updateActivitySteps((prev) =>
@@ -506,7 +525,7 @@ export function useChat({
             );
           }
         } else {
-          result = `User declined to run skill '${call.name}'.`;
+          result = isChoice ? 'The user closed the prompt without choosing an option.' : `User declined to run skill '${call.name}'.`;
         }
         const toolResultMessage: Message = {
           id: makeId(),
@@ -655,6 +674,7 @@ export function useChat({
     pendingToolCall,
     approveToolCall,
     denyToolCall,
+    selectToolChoice,
     activitySteps,
     continueTurn,
     canContinue: pausedMessages !== null,

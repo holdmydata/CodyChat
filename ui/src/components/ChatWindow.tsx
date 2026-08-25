@@ -8,6 +8,7 @@ import { ContextMeter } from './ContextMeter';
 import { MessageBubble, buildToolResultIndex } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { ToolApprovalPrompt } from './ToolApprovalPrompt';
+import { ChoicePrompt } from './ChoicePrompt';
 import { TurnFlowGraph } from './ActivityTracker';
 import { ChatHistory3D } from './ChatHistory3D';
 
@@ -23,6 +24,8 @@ interface ChatWindowProps {
   pendingToolCall: ToolCall | null;
   onApproveToolCall: () => void;
   onDenyToolCall: () => void;
+  /** Resolves an ask_user_choice call with the clicked option — see ChoicePrompt.tsx and useChat.ts's selectToolChoice. */
+  onSelectToolChoice: (option: string) => void;
   activitySteps: ActivityStep[];
   /** True when a turn is paused at the tool-call iteration cap and can be resumed. */
   canContinue: boolean;
@@ -54,6 +57,7 @@ export function ChatWindow({
   pendingToolCall,
   onApproveToolCall,
   onDenyToolCall,
+  onSelectToolChoice,
   activitySteps,
   canContinue,
   onContinue,
@@ -221,9 +225,12 @@ export function ChatWindow({
 
       {isStreaming && <TurnFlowGraph steps={activitySteps} variant="live" />}
 
-      {pendingToolCall && (
-        <ToolApprovalPrompt call={pendingToolCall} onApprove={onApproveToolCall} onDeny={onDenyToolCall} />
-      )}
+      {pendingToolCall &&
+        (pendingToolCall.name === 'ask_user_choice' ? (
+          <ChoicePrompt call={pendingToolCall} onSelect={onSelectToolChoice} onCancel={onDenyToolCall} />
+        ) : (
+          <ToolApprovalPrompt call={pendingToolCall} onApprove={onApproveToolCall} onDeny={onDenyToolCall} />
+        ))}
 
       {loopState !== 'idle' && (
         <div className={`chat-window__continue chat-window__loop-status chat-window__loop-status--${loopState}`}>

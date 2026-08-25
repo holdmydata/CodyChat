@@ -404,6 +404,7 @@ function App() {
     pendingToolCall,
     approveToolCall,
     denyToolCall,
+    selectToolChoice,
     activitySteps,
     continueTurn,
     canContinue,
@@ -574,6 +575,7 @@ function App() {
             pendingToolCall={pendingToolCall}
             onApproveToolCall={approveToolCall}
             onDenyToolCall={denyToolCall}
+            onSelectToolChoice={selectToolChoice}
           />
         ) : mainView === 'memory-graph' ? (
           <MemoryGraphView
@@ -665,6 +667,7 @@ function App() {
                 pendingToolCall={pendingToolCall}
                 onApproveToolCall={approveToolCall}
                 onDenyToolCall={denyToolCall}
+                onSelectToolChoice={selectToolChoice}
                 activitySteps={activitySteps}
                 canContinue={canContinue}
                 onContinue={continueTurn}

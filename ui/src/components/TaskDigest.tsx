@@ -4,6 +4,7 @@ import { getTaskDigest, listTasks, type TaskDigest as TaskDigestData, type TaskI
 import type { LoopState } from '../hooks/useAutonomousLoop';
 import type { ToolCall } from '../types';
 import { ToolApprovalPrompt } from './ToolApprovalPrompt';
+import { ChoicePrompt } from './ChoicePrompt';
 
 const POLL_INTERVAL_MS = 8000;
 const DEFAULT_MAX_TASKS = 1;
@@ -19,6 +20,7 @@ interface TaskDigestProps {
   pendingToolCall: ToolCall | null;
   onApproveToolCall: () => void;
   onDenyToolCall: () => void;
+  onSelectToolChoice: (option: string) => void;
 }
 
 export function TaskDigest({
@@ -31,6 +33,7 @@ export function TaskDigest({
   pendingToolCall,
   onApproveToolCall,
   onDenyToolCall,
+  onSelectToolChoice,
 }: TaskDigestProps) {
   const [projects, setProjects] = useState<TaskDigestData[] | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -131,9 +134,12 @@ export function TaskDigest({
         )}
       </div>
 
-      {pendingToolCall && (
-        <ToolApprovalPrompt call={pendingToolCall} onApprove={onApproveToolCall} onDeny={onDenyToolCall} />
-      )}
+      {pendingToolCall &&
+        (pendingToolCall.name === 'ask_user_choice' ? (
+          <ChoicePrompt call={pendingToolCall} onSelect={onSelectToolChoice} onCancel={onDenyToolCall} />
+        ) : (
+          <ToolApprovalPrompt call={pendingToolCall} onApprove={onApproveToolCall} onDeny={onDenyToolCall} />
+        ))}
 
       {projects.map((project) => {
         // A run that stopped without completing (see useAutonomousLoop.ts's

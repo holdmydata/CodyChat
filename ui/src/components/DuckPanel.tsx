@@ -129,6 +129,7 @@ export function DuckPanel({ open, onClose, baseUrl, defaultModel }: DuckPanelPro
     pendingToolCall,
     approveToolCall,
     denyToolCall,
+    selectToolChoice,
     activitySteps,
     continueTurn,
     canContinue,
@@ -182,6 +183,7 @@ export function DuckPanel({ open, onClose, baseUrl, defaultModel }: DuckPanelPro
           pendingToolCall={pendingToolCall}
           onApproveToolCall={approveToolCall}
           onDenyToolCall={denyToolCall}
+          onSelectToolChoice={selectToolChoice}
           activitySteps={activitySteps}
           canContinue={canContinue}
           onContinue={continueTurn}

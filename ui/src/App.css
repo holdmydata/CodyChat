@@ -1402,6 +1402,57 @@ input[type='range']::-moz-range-thumb:hover {
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger) 45%, transparent);
 }
 
+/* ask_user_choice's prompt (ChoicePrompt.tsx) — reuses .tool-approval's
+   outer border/glow/animation, own layout underneath for the question text
+   and a button grid of options instead of an Approve/Deny pair. */
+.tool-choice__question {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-h);
+}
+
+.tool-choice__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tool-choice__option {
+  padding: 7px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--accent-border);
+  background: var(--accent-bg);
+  color: var(--text-h);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+}
+
+.tool-choice__option:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px 0 color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.tool-choice__cancel {
+  margin-top: 10px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text);
+  opacity: 0.6;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.tool-choice__cancel:hover {
+  opacity: 1;
+  color: var(--danger);
+}
+
 /* Turn flow graph (ActivityTracker.tsx::TurnFlowGraph) — a single turn's
    thinking/tool-call activity as a horizontal chain of connected nodes
    rather than a vertical checklist. --live is the panel shown below the
