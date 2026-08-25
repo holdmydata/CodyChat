@@ -72,7 +72,10 @@ export function SettingsPanel({
   // only /api/tags (listModels) does, keyed by name, so this is a second
   // fetch rather than folding it into the existing showModel effect.
   useEffect(() => {
-    if (!model) {
+    // Azure OpenAI deployments aren't listable without separate
+    // management-plane permissions this app doesn't ask for — see
+    // azureFoundry.ts's module comment.
+    if (!model || backend === 'azure') {
       setModelSizeBytes(null);
       return;
     }
@@ -92,7 +95,10 @@ export function SettingsPanel({
   }, [baseUrl, backend, model]);
 
   useEffect(() => {
-    if (!model) return;
+    // No Azure equivalent of /api/show — a deployment doesn't expose its
+    // baked system prompt/params/context length the way Ollama/llama-server
+    // do, so there's nothing to fetch here for that backend.
+    if (!model || backend === 'azure') return;
     let cancelled = false;
     setModelInfo(null);
     setModelInfoError(null);
@@ -180,8 +186,23 @@ export function SettingsPanel({
     <div className="settings-panel">
       <label className="settings-panel__field">
         <span>Model</span>
-        <ModelPicker baseUrl={baseUrl} value={model} onChange={onModelChange} refreshKey={modelListRefreshKey} />
+        {backend === 'azure' ? (
+          <input
+            type="text"
+            value={model}
+            onChange={(e) => onModelChange(e.target.value)}
+            placeholder="model-router"
+          />
+        ) : (
+          <ModelPicker baseUrl={baseUrl} value={model} onChange={onModelChange} refreshKey={modelListRefreshKey} />
+        )}
       </label>
+      {backend === 'azure' && (
+        <p className="settings-panel__hint">
+          Should match the deployment name configured above in Azure AI Foundry — Azure deployments aren't listable
+          here the way Ollama/OpenAI-compatible models are.
+        </p>
+      )}
 
       {modelInfoError ? (
         <p className="settings-panel__model-info settings-panel__model-info--error">
@@ -205,7 +226,7 @@ export function SettingsPanel({
         </div>
       ) : null}
 
-      {modelInfo && backend !== 'openai' && (
+      {modelInfo && backend === 'ollama' && (
         <label className="settings-panel__field">
           <span>Model's built-in system prompt</span>
           <textarea
@@ -254,11 +275,12 @@ export function SettingsPanel({
         </label>
       </div>
 
-      {backend === 'openai' ? (
+      {backend !== 'ollama' ? (
         <p className="settings-panel__hint">
-          Saving named model variants (baked-in system prompt/params) is an Ollama-only feature — llama-server and
-          other OpenAI-compatible backends serve exactly one model per running instance, chosen at launch, so
-          there's nothing here to save into.
+          Saving named model variants (baked-in system prompt/params) is an Ollama-only feature —{' '}
+          {backend === 'openai'
+            ? 'llama-server and other OpenAI-compatible backends serve exactly one model per running instance, chosen at launch, so there\'s nothing here to save into.'
+            : 'Azure deployments are managed in the Azure Portal, not from here.'}
         </p>
       ) : (
         <div className="settings-panel__field">

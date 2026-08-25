@@ -11,6 +11,10 @@ import type { ChatParams } from '../types';
 import type { PresentationMode } from '../lib/presentation';
 import { AGENT_HINTS, type AgentHintSettings } from '../lib/agentHints';
 import type { ChatBackend } from '../hooks/useChat';
+import { AzureSettings } from './AzureSettings';
+import type { AzureAuthStatus } from '../hooks/useAzureAuth';
+import type { AzureConfig } from '../lib/azureAuth';
+import type { GovernanceConfig } from '../lib/governance';
 
 interface SettingsMenuProps {
   baseUrl: string;
@@ -62,6 +66,15 @@ interface SettingsMenuProps {
   /** Standing behavior hints folded into every turn's system prompt — see lib/agentHints.ts. */
   agentHints: AgentHintSettings;
   onAgentHintsChange: (next: AgentHintSettings) => void;
+  azureConfig: AzureConfig;
+  onAzureConfigChange: (config: AzureConfig) => void;
+  azureAuthStatus: AzureAuthStatus;
+  onAzureSignIn: () => void;
+  onAzureCancelSignIn: () => void;
+  onAzureSignOut: () => void;
+  /** Application Insights connection + fallback-user config for governance telemetry — see lib/governance.ts. Backend-agnostic (shown regardless of which backend is active) since usage on any of them is part of the same governance picture. */
+  governanceConfig: GovernanceConfig;
+  onGovernanceConfigChange: (config: GovernanceConfig) => void;
 }
 
 // Curated, not free-typed — real bug this replaces: the free-text input
@@ -148,6 +161,14 @@ export function SettingsMenu({
   onFontOverrideChange,
   agentHints,
   onAgentHintsChange,
+  azureConfig,
+  onAzureConfigChange,
+  azureAuthStatus,
+  onAzureSignIn,
+  onAzureCancelSignIn,
+  onAzureSignOut,
+  governanceConfig,
+  onGovernanceConfigChange,
 }: SettingsMenuProps) {
   const [tab, setTab] = useState<Tab>('general');
   // Local text buffer so typing doesn't fight the parent's parsed array on
@@ -248,17 +269,20 @@ export function SettingsMenu({
               <select value={backend} onChange={(e) => onBackendChange(e.target.value as ChatBackend)}>
                 <option value="ollama">Ollama</option>
                 <option value="openai">OpenAI-compatible (llama.cpp / LM Studio / vLLM)</option>
+                <option value="azure">Azure AI Foundry</option>
               </select>
             </label>
-            <label className="settings-panel__field">
-              <span>{backend === 'openai' ? 'Server base URL' : 'Ollama base URL'}</span>
-              <input
-                type="text"
-                value={baseUrl}
-                onChange={(e) => onBaseUrlChange(e.target.value)}
-                placeholder={backend === 'openai' ? 'http://localhost:8080' : 'http://localhost:11434'}
-              />
-            </label>
+            {backend !== 'azure' && (
+              <label className="settings-panel__field">
+                <span>{backend === 'openai' ? 'Server base URL' : 'Ollama base URL'}</span>
+                <input
+                  type="text"
+                  value={baseUrl}
+                  onChange={(e) => onBaseUrlChange(e.target.value)}
+                  placeholder={backend === 'openai' ? 'http://localhost:8080' : 'http://localhost:11434'}
+                />
+              </label>
+            )}
             {backend === 'openai' && (
               <p className="settings-menu__hint">
                 Points at one already-running OpenAI-compatible server (llama-server, LM Studio, vLLM, …) —
@@ -267,6 +291,40 @@ export function SettingsMenu({
                 (llama-server: <code>--jinja</code>).
               </p>
             )}
+            {backend === 'azure' && (
+              <AzureSettings
+                config={azureConfig}
+                onConfigChange={onAzureConfigChange}
+                status={azureAuthStatus}
+                onSignIn={onAzureSignIn}
+                onCancelSignIn={onAzureCancelSignIn}
+                onSignOut={onAzureSignOut}
+              />
+            )}
+
+            <h4 className="settings-menu__subheading">Governance telemetry</h4>
+            <p className="settings-menu__hint">
+              Optional — logs every chat turn's tokens/cost/duration to Application Insights as a "ChatCompletion"
+              custom event, across whichever backend is active. Leave the connection string blank to disable.
+            </p>
+            <label className="settings-panel__field">
+              <span>Application Insights connection string</span>
+              <input
+                type="text"
+                value={governanceConfig.connectionString}
+                onChange={(e) => onGovernanceConfigChange({ ...governanceConfig, connectionString: e.target.value })}
+                placeholder="InstrumentationKey=...;IngestionEndpoint=https://..."
+              />
+            </label>
+            <label className="settings-panel__field">
+              <span>Your name / user ID (used when not signed in to Azure)</span>
+              <input
+                type="text"
+                value={governanceConfig.fallbackUserName}
+                onChange={(e) => onGovernanceConfigChange({ ...governanceConfig, fallbackUserName: e.target.value })}
+                placeholder="you@example.com"
+              />
+            </label>
 
             <h4 className="settings-menu__subheading">Agent behavior</h4>
             <p className="settings-menu__hint">

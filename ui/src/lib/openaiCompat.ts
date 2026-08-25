@@ -107,25 +107,29 @@ interface PendingToolCall {
   args: string;
 }
 
-export async function streamChat({
-  baseUrl,
-  model,
-  messages,
-  params,
-  signal,
-  tools,
-  onToken,
-  onThinking,
-  onToolCalls,
-}: StreamChatArgs): Promise<string> {
-  const res = await fetch(`${baseUrl}/v1/chat/completions`, {
+// The actual OpenAI-wire streaming implementation, factored out so a
+// second caller with a different URL/auth (azureFoundry.ts — Azure's
+// chat-completions endpoint is the same wire shape, just deployment-URLed
+// and bearer-token-authed) doesn't have to duplicate this ~120-line
+// SSE/tool-call-accumulation loop. `url` and `extraHeaders` are the only
+// things that differ between callers; everything else about the request
+// body and response parsing is identical.
+export async function streamOpenAIWireChat(
+  url: string,
+  extraHeaders: Record<string, string>,
+  { model, messages, params, signal, tools, onToken, onThinking, onToolCalls, onUsage }: Omit<StreamChatArgs, 'baseUrl'>
+): Promise<string> {
+  const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...extraHeaders },
     signal,
     body: JSON.stringify({
       model,
       messages: toOpenAIMessages(messages),
       stream: true,
+      // Without this, usage is only ever returned on a non-streaming
+      // response — the streamed final chunk omits it entirely by default.
+      stream_options: { include_usage: true },
       temperature: params.temperature,
       top_p: params.topP,
       ...(tools ? { tools } : {}),
@@ -186,6 +190,7 @@ export async function streamChat({
           };
           finish_reason?: string | null;
         }[];
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
         error?: { message?: string } | string;
       };
       try {
@@ -226,8 +231,18 @@ export async function streamChat({
       if (chunk.choices?.[0]?.finish_reason === 'tool_calls') {
         flushToolCalls();
       }
+      // Arrives on its own final chunk (with an empty choices array) once
+      // stream_options.include_usage is set above — not attached to any
+      // per-token delta.
+      if (typeof chunk.usage?.prompt_tokens === 'number' && typeof chunk.usage?.completion_tokens === 'number') {
+        onUsage?.({ promptTokens: chunk.usage.prompt_tokens, completionTokens: chunk.usage.completion_tokens });
+      }
     }
   }
 
   return full;
+}
+
+export async function streamChat({ baseUrl, ...args }: StreamChatArgs): Promise<string> {
+  return streamOpenAIWireChat(`${baseUrl}/v1/chat/completions`, {}, args);
 }

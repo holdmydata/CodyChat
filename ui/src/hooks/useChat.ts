@@ -2,8 +2,9 @@ import { useCallback, useRef, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { sendNotification, isPermissionGranted, requestPermission } from '@tauri-apps/plugin-notification';
-import { streamChat as ollamaStreamChat, showModel as ollamaShowModel, OllamaError, type WireMessage } from '../lib/ollama';
+import { streamChat as ollamaStreamChat, showModel as ollamaShowModel, OllamaError, type TokenUsage, type WireMessage } from '../lib/ollama';
 import { streamChat as openaiStreamChat, showModel as openaiShowModel } from '../lib/openaiCompat';
+import { streamChat as azureStreamChat } from '../lib/azureFoundry';
 import { executeSkill, getToolDefinitions, type ToolDefinition } from '../lib/skills';
 import { getEnvironmentInfo, formatEnvironmentContext } from '../lib/environment';
 import { indexMessage } from '../lib/memory';
@@ -11,6 +12,7 @@ import { riskOf, isSafeCommand } from '../lib/toolConfig';
 import { summarizeArgs, summarizeValue } from '../lib/format';
 import { budgetTokensFor, estimateTokens, trimMessagesToBudget } from '../lib/contextBudget';
 import { defaultAgentHintSettings, resolveAgentHints, type AgentHintSettings } from '../lib/agentHints';
+import { loadGovernanceConfig, logGovernanceEvent } from '../lib/governance';
 import type { ActivityStep, Conversation, Message, ToolCall } from '../types';
 export type { ActivityStatus, ActivityStep } from '../types';
 
@@ -51,9 +53,12 @@ async function notifyIfHidden(kind: 'approval' | 'response', arg: ToolCall | str
 
 // 'ollama' talks Ollama's native /api/* wire format; 'openai' talks the
 // OpenAI-compatible format shared by llama-server/LM Studio/vLLM (see
-// lib/openaiCompat.ts) — picks which module's streamChat/showModel this
-// hook calls, everything else about the turn loop is identical either way.
-export type ChatBackend = 'ollama' | 'openai';
+// lib/openaiCompat.ts); 'azure' talks Azure AI Foundry/Azure OpenAI's
+// deployment-addressed, Entra-token-authed variant of that same wire
+// format (see lib/azureFoundry.ts) — picks which module's streamChat/
+// showModel this hook calls, everything else about the turn loop is
+// identical either way.
+export type ChatBackend = 'ollama' | 'openai' | 'azure';
 
 const makeId = () => crypto.randomUUID();
 
@@ -88,7 +93,18 @@ interface UseChatArgs {
   safeCommands?: string[];
   /** User-editable standing behavior hints (convergence/thinking-efficiency/memory-labeling) — see lib/agentHints.ts. */
   agentHints?: AgentHintSettings;
+  /** Signed-in Azure UPN (from useAzureAuth), when backend is 'azure' and a session is active — used as governance's 'user' field in place of the configured fallback name. */
+  azureAccount?: string | null;
 }
+
+const CHAT_BACKENDS: Record<ChatBackend, { streamChat: typeof ollamaStreamChat; showModel: typeof ollamaShowModel | null }> = {
+  ollama: { streamChat: ollamaStreamChat, showModel: ollamaShowModel },
+  openai: { streamChat: openaiStreamChat, showModel: openaiShowModel },
+  // No showModel — Azure OpenAI deployments don't expose an equivalent
+  // "show me this model's baked system prompt" call the way Ollama/
+  // llama-server do; beginTurn below skips that lookup for this backend.
+  azure: { streamChat: azureStreamChat, showModel: null },
+};
 
 function toWireMessages(
   messages: Pick<Message, 'role' | 'content' | 'toolCalls' | 'toolCallId' | 'images'>[]
@@ -128,9 +144,9 @@ export function useChat({
   autoApproveSafeCommands,
   safeCommands,
   agentHints,
+  azureAccount,
 }: UseChatArgs) {
-  const streamChat = backend === 'openai' ? openaiStreamChat : ollamaStreamChat;
-  const showModel = backend === 'openai' ? openaiShowModel : ollamaShowModel;
+  const { streamChat, showModel } = CHAT_BACKENDS[backend];
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pendingToolCall, setPendingToolCall] = useState<ToolCall | null>(null);
@@ -232,6 +248,8 @@ export function useChat({
       let assembled = '';
       let assembledThinking = '';
       let toolCalls: ToolCall[] | null = null;
+      let usage: TokenUsage | null = null;
+      const startedAt = performance.now();
 
       await streamChat({
         baseUrl,
@@ -264,11 +282,33 @@ export function useChat({
             })),
           ]);
         },
+        onUsage: (u) => {
+          usage = u;
+        },
       });
+
+      // Logged per actual request, not once per outer turn — a tool-calling
+      // turn issues several of these (one per round-trip), each a real,
+      // separately-billed model call, so governance has to account for
+      // each one rather than only the final one. No usage means the
+      // backend/response didn't report it (see ollama.ts/openaiCompat.ts's
+      // onUsage) — nothing to log in that case.
+      if (usage) {
+        const { promptTokens, completionTokens } = usage as TokenUsage;
+        logGovernanceEvent({
+          user: azureAccount || loadGovernanceConfig().fallbackUserName,
+          agent: conv.title,
+          model: conv.model,
+          backend,
+          promptTokens,
+          completionTokens,
+          durationMs: performance.now() - startedAt,
+        });
+      }
 
       return { current, assistantId: assistantMessage.id, toolCalls };
     },
-    [baseUrl, streamChat, onMessagesChange, updateActivitySteps]
+    [baseUrl, streamChat, onMessagesChange, updateActivitySteps, backend, azureAccount]
   );
 
   // retryState is a single mutable object created once per top-level turn
@@ -524,7 +564,7 @@ export function useChat({
             envContextRef.current = '';
           }
         }
-        if (conversation.model && !modelSystemCacheRef.current.has(conversation.model)) {
+        if (showModel && conversation.model && !modelSystemCacheRef.current.has(conversation.model)) {
           try {
             const info = await showModel(baseUrl, conversation.model);
             modelSystemCacheRef.current.set(conversation.model, info.system);

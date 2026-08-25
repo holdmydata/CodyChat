@@ -30,8 +30,13 @@ raw-window-handle = "0.6"
 regex = "1"
 rusqlite = { version = "0.32", features = ["bundled", "load_extension"] }
 pdf-extract = "0.7"
-reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "rustls-native-certs"] }
+reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls", "rustls-native-certs", "json", "form"] }
 html2text = "0.17"
+# Refresh-token storage for the Azure Entra device-code flow (azure_auth.rs)
+# — the one app-level secret sensitive enough to warrant the OS credential
+# store rather than the plaintext localStorage everything else uses.
+keyring = "3"
+base64 = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Dwm", "Win32_UI_Controls", "Win32_UI_WindowsAndMessaging", "Win32_System_SystemInformation"] }

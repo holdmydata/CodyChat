@@ -1,3 +1,4 @@
+mod azure_auth;
 mod commands;
 mod mcp;
 mod memory;
@@ -334,6 +335,7 @@ pub fn run() {
         .manage(AlwaysOnTop(AtomicBool::new(false)))
         .manage(FullMode(AtomicBool::new(false)))
         .manage(mcp::McpState::new())
+        .manage(azure_auth::AzureAuthState::new())
         .setup(|app| {
             let window = app
                 .get_webview_window("main")
@@ -466,6 +468,11 @@ pub fn run() {
             memory::get_memory_graph,
             memory::get_memory_item,
             memory::delete_memory_item,
+            azure_auth::azure_start_device_code,
+            azure_auth::azure_poll_device_code,
+            azure_auth::azure_get_access_token,
+            azure_auth::azure_restore_session,
+            azure_auth::azure_sign_out,
             close_to_tray,
             expand_window,
             collapse_window,

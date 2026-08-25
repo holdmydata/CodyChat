@@ -14,6 +14,8 @@ import { useConversations } from './hooks/useConversations';
 import { useChat } from './hooks/useChat';
 import { useAutonomousLoop } from './hooks/useAutonomousLoop';
 import { useMcpServers } from './hooks/useMcpServers';
+import { useAzureAuth } from './hooks/useAzureAuth';
+import { loadGovernanceConfig, saveGovernanceConfig, type GovernanceConfig } from './lib/governance';
 import {
   applyFontOverride,
   applyThemePack,
@@ -87,6 +89,13 @@ function App() {
   }, []);
 
   const mcp = useMcpServers();
+  const azure = useAzureAuth();
+
+  const [governanceConfig, setGovernanceConfig] = useState<GovernanceConfig>(loadGovernanceConfig);
+  const handleGovernanceConfigChange = useCallback((next: GovernanceConfig) => {
+    setGovernanceConfig(next);
+    saveGovernanceConfig(next);
+  }, []);
 
   // Bumped by Settings → General's "Save as custom model" so ChatWindow's
   // ModelPicker refreshes its list — lifted here since the save action and
@@ -412,6 +421,7 @@ function App() {
     autoApproveSafeCommands,
     safeCommands,
     agentHints,
+    azureAccount: azure.status.account,
   });
 
   const autonomousLoop = useAutonomousLoop({ runAutonomousTurn, baseUrl });
@@ -620,6 +630,14 @@ function App() {
             onFontOverrideChange={handleFontOverrideChange}
             agentHints={agentHints}
             onAgentHintsChange={handleAgentHintsChange}
+            azureConfig={azure.config}
+            onAzureConfigChange={azure.setConfig}
+            azureAuthStatus={azure.status}
+            onAzureSignIn={azure.signIn}
+            onAzureCancelSignIn={azure.cancelSignIn}
+            onAzureSignOut={azure.signOut}
+            governanceConfig={governanceConfig}
+            onGovernanceConfigChange={handleGovernanceConfigChange}
           />
         ) : (
           <>

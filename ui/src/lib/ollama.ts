@@ -20,6 +20,11 @@ export interface WireMessage {
   images?: string[];
 }
 
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+}
+
 export interface StreamChatArgs {
   baseUrl: string;
   model: string;
@@ -30,6 +35,8 @@ export interface StreamChatArgs {
   onToken: (token: string) => void;
   onThinking?: (token: string) => void;
   onToolCalls?: (calls: ToolCall[]) => void;
+  /** Fired once, when the backend reports prompt/completion token counts for the turn — see lib/governance.ts. Not every backend/response shape includes this. */
+  onUsage?: (usage: TokenUsage) => void;
 }
 
 export interface BakedParams {
@@ -267,6 +274,7 @@ export async function streamChat({
   onToken,
   onThinking,
   onToolCalls,
+  onUsage,
 }: StreamChatArgs): Promise<string> {
   const res = await fetch(`${baseUrl}/api/chat`, {
     method: 'POST',
@@ -337,6 +345,9 @@ export async function streamChat({
       if (chunk.message?.content) {
         full += chunk.message.content;
         onToken(chunk.message.content);
+      }
+      if (chunk.done && typeof chunk.prompt_eval_count === 'number' && typeof chunk.eval_count === 'number') {
+        onUsage?.({ promptTokens: chunk.prompt_eval_count, completionTokens: chunk.eval_count });
       }
       if (chunk.error) {
         // Same asymmetry fix as the initial-response path above — a
